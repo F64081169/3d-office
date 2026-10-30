@@ -18,3 +18,7 @@ export const PRIORITY_LABEL: Record<TaskPriority, string> = {
 
 export const timeOf = (iso?: string) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
+
+/** Score colour: excellent / good / fair / poor. */
+export const scoreColor = (total: number) =>
+  total >= 90 ? '#2f9e6e' : total >= 80 ? '#3b8fd0' : total >= 70 ? '#c99227' : '#d0574d'

@@ -14,8 +14,8 @@
 | 2 | Agent data · Click UI · Status UI（＋辦公室貓 Mochi） | ✅ 完成 |
 | 3 | Task engine · Director delegation · Mock Agent Provider（＋Event stream、SQLite） | ✅ 完成 |
 | 4 | Movement（Event system 已在 Phase 3 完成） | ✅ 完成 |
-| 5 | Performance · Coins · Dashboard | ⏭️ 下一步 |
-| 6 | Polish · Premium office · Lighting · Camera | 🔜 |
+| 5 | Performance · Coins · Dashboard | ✅ 完成 |
+| 6 | Polish · Premium office · Lighting · Camera | ⏭️ 下一步 |
 
 詳細清單見 [docs/mvp.md](docs/mvp.md)。
 
@@ -53,7 +53,7 @@ SIM_SPEED=2 npm run dev
 其他指令：
 
 ```bash
-npm test            # 以 40 倍速跑完整 Demo 流程（agent runtime）＋ 路徑不碰家具檢查（shared world model）
+npm test            # 以 40 倍速跑完整 Demo 流程（含計分與發幣）＋ 計分公式、路徑不碰家具檢查（shared）
 ```
 
 ```bash
@@ -79,6 +79,7 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
 | 點擊 3D 中的貓 | 打開 Mochi 的資訊卡（Pet / Follow） |
 | 點擊空白處 / `Esc` | 關閉 Panel、停止跟隨 |
 | 滑過 Roster 的 Agent | 3D 中亮出該 Agent 的部門光圈 |
+| 上方 KPI 列 | 點一下打開 Company Dashboard（`Esc` 關閉） |
 | 底部 View bar | Overview · Workspace · Director · Meeting Room · Lounge · Coffee Bar · Bathroom · City View |
 | `P` | 效能統計（FPS / draw calls / triangles） |
 | 右下 `?` | 顯示操作說明 |
@@ -88,6 +89,48 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
 右下 `?` 裡也有 **Reset company**：清空所有專案、任務與聊天，回到初始狀態。
 
 開發用：網址加上 `?nav`（例如 http://localhost:5173/?nav）會畫出走道導航圖（青色）、Agent 目的地支線（琥珀色）與貓的目的地（粉紅）。
+
+## Phase 5 內容：績效、Coins、Dashboard
+
+![Company Dashboard](docs/images/dashboard.jpg)
+
+每個任務完成時都會**計分並發 Coins**，Owner 從畫面上就看得出誰做得好：
+
+```
+Score = 50 + Quality (0–20) + Speed (0–10) + Difficulty (0–10) + Review (0–10)
+Performance = 80% 原本的 performance + 20% 這次的分數
+Coins：Normal 100 · Hard 200 · Critical 500
+```
+
+- **Quality**：provider 對結果的評分。
+- **Speed**：實際花的時間和預估相比。
+- **Difficulty**：依 priority。
+- **Review**：是否一次通過（Blocked 後重試只有一半；Manager / Director 看團隊一次通過的比例）。
+
+完整定義見 [agent-flow.md §7](docs/agent-flow.md)。
+
+在畫面上：
+
+- **3D**：任務完成時，Agent 頭上先浮出 `✓ Score 94`，接著浮出 `+100 Coins`，他會舉手歡呼。
+- **上方 KPI 列**：Active / Done / Blocked、平均 performance、已發 Coins、忙碌人數，數字即時跳動。
+- **Company Dashboard**（點 KPI 列打開）：
+  - 6 張 KPI 卡：Active / Completed / Blocked Tasks、Average Performance、Total Coins Distributed、Active Agents。
+  - Leaderboard：performance 排名、升降、Coins。
+  - 專案進度與平均分數。
+  - 最近完成的任務與發出的 Coins。
+- **會議室大螢幕**：顯示同一份即時資料，開會時抬頭就看得到。
+- **Agent Panel**：完成數、平均分數、賺到的 Coins、performance 升降；Recent tasks 顯示分數。
+- **Task view**：分數卡，列出每一項各得幾分、Coins 發給誰。
+- **Project Completed** 通知會附上這個專案總共發出的 Coins 與平均分數。
+- 問 Director「What's the status?」，她也會說目前發了多少 Coins、平均幾分。
+
+Demo 專案共發出 **1,700 Coins**（6 × 100 + 3 × 200 + 500）。Kenji 因為 Blocked 一次，分數最低（約 84）。所有分數、Coins、performance 都存在 SQLite，重新整理或重啟 server 都會保留。
+
+| | |
+| --- | --- |
+| ![Score and coins floating over Alex](docs/images/coins-float.jpg) | ![Score card](docs/images/score-card.jpg) |
+
+![Live board in the meeting room](docs/images/meeting-board.jpg)
 
 ## Phase 4 內容：走動
 
@@ -241,10 +284,10 @@ Owner (You)
 │  │     ├─ camera/           開場飛入、預設視角、Orbit + WASD
 │  │     ├─ store/            Zustand store（快照 + SSE，套用共用 reducer）
 │  │     ├─ net/              API client、事件串流
-│  │     └─ ui/               HUD（Roster、Director Chat、Agent / Task / Cat Panel、Toasts、Stats）
+│  │     └─ ui/               HUD（Roster、Director Chat、KPI 列、Company Dashboard、Agent / Task / Cat Panel、Toasts、Stats）
 │  └─ server/                 ✅ Fastify API、SSE、事件管線、SQLite 持久化、重啟恢復
 ├─ packages/
-│  ├─ shared/                 ✅ 型別、OfficeEvent、reduceEvent、組織 seed、座位、世界模型（導航圖、目的地、走路時間）
+│  ├─ shared/                 ✅ 型別、OfficeEvent、reduceEvent、組織 seed、座位、世界模型（導航圖、目的地、走路時間）、計分
 │  ├─ agent-runtime/          ✅ Director / Manager / Employee 行為（含 Demo 流程測試）
 │  ├─ task-engine/            ✅ 任務狀態機、建立專案 / 任務、roll-up
 │  └─ llm-provider/           ✅ LLMProvider 介面 + Mock provider（Claude / OpenAI 待加入）
@@ -285,5 +328,5 @@ Owner (You)
 ## Docs
 
 - [Architecture](docs/architecture.md)：Frontend、Backend、Agent Runtime、Task Engine、Event Bus、Database、3D World、LLM Provider（含 Mermaid 圖）
-- [Agent Flow](docs/agent-flow.md)：組織圖、任務拆解、時序圖、狀態機、Status → 3D 對照、計分公式
+- [Agent Flow](docs/agent-flow.md)：組織圖、任務拆解、時序圖、狀態機、Status → 3D 對照、計分公式與 Demo 分數
 - [MVP Plan](docs/mvp.md)：驗證目標、各 Phase checklist、Demo flow、不做的項目

@@ -62,12 +62,15 @@
 - [x] 測試：路徑不碰家具、影響時間軸的走路時間上限、座位不重複
 - [x] ~~螢幕內容隨 status 變化（idle / code / docs / error）~~（Phase 2–3 已完成）
 
-### Phase 5 — Performance · Coins · Dashboard
+### Phase 5 — Performance · Coins · Dashboard ✅
 
-- [ ] 計分公式與 performance 更新
-- [ ] Coins 發放、`+N Coins` 浮字、Reward +100
-- [ ] Company Dashboard overlay：Active / Completed / Blocked Tasks、Average Performance、Total Coins Distributed、Active Agents
-- [ ] Meeting Room 大螢幕顯示即時 Dashboard
+- [x] 計分公式（50 + Quality + Speed + Difficulty + Review）與 performance 移動平均，放在 shared，server 與前端共用（`packages/shared/src/scoring.ts`，含測試）
+- [x] Provider 回傳 `quality`；runtime 依實際耗時、priority、是否一次通過計分
+- [x] 任務完成自動發 Coins（100 / 200 / 500），`✓ Score` 與 `+N Coins` 浮字疊在一起、Agent 歡呼；Reward +100 沿用
+- [x] 上方 KPI 列 + Company Dashboard overlay：Active / Completed / Blocked Tasks、Average Performance、Total Coins Distributed、Active Agents、Leaderboard、Projects、Recent completions
+- [x] Meeting Room 大螢幕顯示即時 Dashboard（canvas texture，數字變了才重畫）
+- [x] Agent Panel 戰績、Task view 分數卡、Project Completed Toast 顯示發出的 Coins 與平均分數；Director 回報進度時也會提到
+- [x] 分數、Coins、performance 寫入 SQLite，重啟後保留
 
 ### Phase 6 — Polish
 
@@ -76,7 +79,7 @@
 - [ ] Camera：會議時自動導播（跟隨模式已在 Phase 2 為貓實作，可直接用於 Agent）
 - [ ] Claude / OpenAI provider
 
-## Demo Flow（Phase 5 完成時）
+## Demo Flow ✅
 
 1. 打開網頁 → 2. 進入 3D Office → 3. Camera 飛進辦公室 → 4. Director 在辦公室 → 5. Managers / Employees 在座位 → 6. 打開 Director Chat → 7. 輸入 "Analyze random write bottleneck." → 8. Director：「Project created.」→ 9. Dashboard 出現 Project → 10. Director 走去 Meeting Room → 11. Managers 進入 Meeting Room → 12. 任務拆解 → 13. Employees 回到座位 → 14. Thinking / Working → 15. 任務完成 → 16. Employees 向 Manager report → 17. Managers 向 Director report → 18. Director 回辦公室 → 19. Director 對 Owner 回報 → 20. Project Completed → 21. Coins distributed → 22. Performance updated → 23. 顯示「Project Completed」
 
@@ -86,7 +89,7 @@
 - Phase 2 加上點擊 Agent 查看資料，以及狀態在 3D 中的呈現。
 - Phase 3 完成步驟 6–9、12、14–17、19–20、23：對話、建立專案、拆解、執行、回報、Project Completed 通知。
 - Phase 4 完成步驟 10–11、13、16–18 的 3D 部分：Director 與 Managers 走進會議室、會後走回座位、Employees 走到主管桌前回報、Managers 走進 Director Office 回報、Director 回到辦公桌。
-- 步驟 21–22（自動發 Coins、更新 Performance）是 Phase 5。
+- Phase 5 完成步驟 21–22：每個任務完成時發 Coins、更新 Performance；第 23 步的通知會附上總共發出的 Coins 與平均分數。整個 Demo Flow 23 步都已可執行。
 
 ## 不做（延後）
 

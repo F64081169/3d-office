@@ -7,6 +7,7 @@ import {
   type Project,
   type Task,
   type TaskPriority,
+  type TaskScore,
   type TaskStatus,
 } from '@office/shared'
 
@@ -116,7 +117,7 @@ export class TaskEngine {
     const t = this.task(taskId)
     if (t.status === 'working') return
     this.assertCan(t, 'working')
-    if (t.status === 'assigned') this.emit({ type: 'TASK_STARTED', taskId, agentId: t.assignedTo })
+    if (t.status === 'assigned') this.emit({ type: 'TASK_STARTED', taskId, agentId: t.assignedTo, startedAt: this.now() })
     else this.emit({ type: 'TASK_STATUS_CHANGED', taskId, status: 'working' })
   }
 
@@ -133,10 +134,14 @@ export class TaskEngine {
     this.emit({ type: 'TASK_STATUS_CHANGED', taskId, status: 'review' })
   }
 
-  complete(taskId: string, result: string) {
+  /** Finish a task: record the score, then pay its reward to the assignee (unless it failed). */
+  complete(taskId: string, result: string, { score, paid = true }: { score?: TaskScore; paid?: boolean } = {}) {
     const t = this.task(taskId)
     this.assertCan(t, 'completed')
-    this.emit({ type: 'TASK_COMPLETED', taskId, agentId: t.assignedTo, result, completedAt: this.now() })
+    this.emit({ type: 'TASK_COMPLETED', taskId, agentId: t.assignedTo, result, completedAt: this.now(), score })
+    if (paid && t.reward > 0) {
+      this.emit({ type: 'AGENT_REWARDED', agentId: t.assignedTo, coins: t.reward, reason: `Completed: ${t.title}`, taskId })
+    }
   }
 
   completeProject(projectId: string, summary: string) {

@@ -54,7 +54,7 @@ flowchart LR
 | 層 | 位置 | 狀態 |
 | --- | --- | --- |
 | Shared domain model + reducer | `packages/shared` | ✅ P1 型別、P3 事件與 `reduceEvent` |
-| Frontend / HUD | `apps/web/src/ui` | ✅ Roster、View bar（P1）、Agent / Cat Panel（P2）、Director Chat、Task view、Toasts（P3）；Dashboard 🔜 P5 |
+| Frontend / HUD | `apps/web/src/ui` | ✅ Roster、View bar（P1）、Agent / Cat Panel（P2）、Director Chat、Task view、Toasts（P3）、KPI 列與 Company Dashboard（P5） |
 | 3D World | `apps/web/src/world`, `agents`, `camera`, `assets` | ✅ P1；狀態姿勢 P2；走動 P4 |
 | Backend API + SSE | `apps/server` | ✅ Phase 3 |
 | Task Engine | `packages/task-engine` | ✅ Phase 3 |
@@ -63,7 +63,8 @@ flowchart LR
 | Event Bus | server `Company` + SSE + 前端 `applyEvent` | ✅ Phase 3（原訂 P4，提前：沒有它無法看到委派過程） |
 | Database | `prisma/schema.prisma` + `apps/server/src/db.ts` | ✅ Phase 3 |
 | World model（導航圖、目的地、走路時間） | `packages/shared/src/world.ts` | ✅ P2 建立（貓）；P4 移到 shared，前端走動與 runtime 計時共用 |
-| Performance / Coins 自動發放 / Dashboard | — | 🔜 Phase 5 |
+| 計分、Performance、Coins 自動發放 | `packages/shared/src/scoring.ts`、task-engine、agent-runtime | ✅ Phase 5 |
+| Company Dashboard、會議室即時看板 | `apps/web/src/ui/Dashboard.tsx`、`world/rooms/CompanyBoard.tsx` | ✅ Phase 5 |
 
 ---
 
@@ -84,10 +85,18 @@ flowchart LR
   - 右側：Agent Panel / Task view / Cat Panel（`SidePanel.tsx`）。
     - Agent Panel：Chat、Assign Task（表單）、Reward +100、View Task、Recent tasks、Status preview（dev）。
     - Task view：狀態、優先度、Reward、Assignee、上層任務 / 專案、子任務，以及結果（簡易 markdown，`RichText.tsx`）。
-  - 上方 Toasts：Project Completed、指派成功、錯誤、Server offline。
+  - 上方 **KPI 列**（`Dashboard.tsx › Pulse`）：Active / Done / Blocked tasks、平均 performance、已發 Coins、忙碌人數，數字變動時會跳動。點一下打開 **Company Dashboard**（`Esc` 關閉）：
+    - 6 張 KPI 卡：Active / Completed / Blocked Tasks、Average Performance、Total Coins Distributed、Active Agents。
+    - Leaderboard：依 performance 排名，顯示和公司開始時相比的升降、Coins 與這次賺到的 Coins。
+    - Projects：進度、已發 Coins、平均分數。
+    - Recent completions：最近完成的任務、分數、發了多少 Coins。點任一列會打開對應的 Agent 或 Task。
+  - Agent Panel 多了戰績列（完成數、平均分數、賺到的 Coins、performance 升降），Recent tasks 顯示分數。
+  - Task view 對完成的任務顯示**分數卡**：Base / Quality / Speed / Difficulty / Review 各自的分數條，以及發給誰多少 Coins。
+  - 上方 Toasts：Project Completed（含發出的 Coins 與平均分數）、指派成功、錯誤、Server offline。
   - 底部 View bar；右下 `?`：操作說明、效能統計、LLM provider、Reset company。
 - **Agent 名牌與浮動特效**（`src/agents/tags.tsx`）：
-  - 名牌（含貓）與浮字（`+100 Coins`、`✓ Task done`、`♥ purr`）都放在同一個 DOM layer，由 Canvas 內的 `TagProjector` 每幀投影到螢幕座標。
+  - 名牌（含貓）與浮字（`✓ Score 94`、`+100 Coins`、`♥ purr`）都放在同一個 DOM layer，由 Canvas 內的 `TagProjector` 每幀投影到螢幕座標。
+  - 同一個 Agent 同時有多個浮字時會往上疊（`slot`）：任務完成先浮出分數，0.45 秒後浮出 Coins。
   - 投影在每幀渲染**之後**執行（`addAfterEffect`），用的就是畫面上的相機與 Agent 位置；一般 `useFrame` 會比相機與走路更新早一幀，鏡頭飛行時名牌會落後。
   - 3D 物件透過 `agents/anchors.ts` 註冊 anchor（頭頂上方），名牌、Follow 鏡頭、點擊聚焦都讀同一個即時位置。
   - 有 LOD，且會被不透明牆遮擋。
@@ -207,6 +216,10 @@ interface AssetProvider {
 - 狀態變化（activity、地點）寫入 store，讓 Cat Panel 與名牌同步。
 - Follow 鏡頭（`CameraRig`）對任何註冊了 anchor 的物件都適用，Agent 走動時也一樣。
 
+### 3.4.2 會議室即時看板（Phase 5）
+
+`world/rooms/CompanyBoard.tsx`：會議室大螢幕是一張 1024×576 的 canvas texture，內容和 HUD 的 Dashboard 用同一組 shared 函式（`companyStats` / `projectStats`）計算：4 個 KPI、9 人 performance 長條、目前專案進度與最近發出的 Coins。只有在畫面上的數字改變時才重畫並上傳 texture。
+
 ### 3.5 效能策略（目標：桌機 Chrome 約 60 FPS）
 
 | 手段 | 位置 |
@@ -283,7 +296,7 @@ sequenceDiagram
    - 尚未拆解的 Manager 任務：重新拆解。
 3. 已實測：在專案進行中 `kill -9` server，重啟後 5 個未完成任務被接手，專案正常結束。
 
-## 5. Agent Runtime & Task Engine ✅ Phase 3
+## 5. Agent Runtime & Task Engine ✅ Phase 3（計分 Phase 5）
 
 ```mermaid
 flowchart LR
@@ -307,6 +320,7 @@ flowchart LR
   - 只負責驗證狀態轉換並發出事件，從不直接修改狀態。
   - 合法轉換：`backlog → assigned → working ⇄ blocked`、`working → review → completed`、`working → completed`；其他轉換一律拋錯。
   - 任務建立時依優先度設定 `reward`：low / medium 100、high 200、critical 500。
+  - `complete(taskId, result, { score })` 發出 `TASK_COMPLETED`（帶分數），接著發 `AGENT_REWARDED`（帶 `taskId`）把 reward 付給執行者。重試 3 次仍失敗的任務不發 Coins。
 - **Agent Runtime**（`packages/agent-runtime`）：
   - 每位 Agent 有一條序列化的 action queue。行為是短腳本：改狀態 → 一次 provider 呼叫 → engine 指令。不是長時間自主迴圈。
   - 觸發來源只有事件：
@@ -320,12 +334,16 @@ flowchart LR
     - 其他 → 建立專案。
   - Owner 直接指派（Assign Task）：Director → 開專案；其他人 → 建立 `createdBy: owner` 的任務，完成後在該 Agent 的 thread 回報。
   - Reset：`COMPANY_RESET` 讓 generation +1，所有進行中的 action 在下一步自動取消。
+- **計分**（Phase 5，公式在 `packages/shared/src/scoring.ts`，見 [agent-flow.md §7](agent-flow.md)）：
+  - Runtime 在任務完成時計算分數：Quality 來自 provider 回傳的 `quality`（0–1）；Speed 比較 `TASK_STARTED` 之後的模擬時間與預估（Employee 16 s、Manager 45 s、Director 110 s，再加上該 Agent 走去回報的時間）；Difficulty 看 priority；Review 是一次通過的比例（Employee 看自己有沒有重試，Manager / Director 看團隊子任務的 Review 平均）。
+  - 分數放在 `TASK_COMPLETED.score`，共用 reducer 會同時更新任務與執行者的 performance（`performance × 0.8 + score × 0.2`）。Server、資料庫與瀏覽器用同一份計算，不會不一致。
 - 停頓（`PAUSE`，speed 1）：開會 5 s、回報 3 s、Blocked 5 s，都從人走到定位後才開始計時（§3.4）。整個 Demo 約 2 分鐘（Phase 3 沒有走路時約 40 秒）；`SIM_SPEED=2` 約 1 分鐘。
 - 測試：`npm test` 在記憶體中以 40× 速度跑完整 Demo，檢查：
   - 委派順序與任務指派對象。
   - 每個任務都有結果。
   - 狀態序列（Director 有 meeting / reporting、Kenji 有 blocked）。
   - Owner 只收到 Director 的三則訊息。
+  - 每個任務都有分數並付了一次對應的 reward（共 1,700 Coins）；Kenji 因為 Blocked 一次，Review 只有 5 分，是團隊最低分；performance 依完成順序精確更新。
 
 ## 6. Event Bus ✅ Phase 3
 
@@ -336,11 +354,11 @@ type OfficeEvent =
   | { type: 'PROJECT_CREATED'; project: Project }
   | { type: 'TASK_CREATED'; task: Task }
   | { type: 'TASK_ASSIGNED'; taskId: string; agentId: string }
-  | { type: 'TASK_STARTED'; taskId: string; agentId: string }
+  | { type: 'TASK_STARTED'; taskId: string; agentId: string; startedAt?: string }
   | { type: 'TASK_STATUS_CHANGED'; taskId: string; status: TaskStatus; reason?: string }
-  | { type: 'TASK_COMPLETED'; taskId: string; agentId: string; result: string; completedAt: string; score?: number }
+  | { type: 'TASK_COMPLETED'; taskId: string; agentId: string; result: string; completedAt: string; score?: TaskScore }
   | { type: 'AGENT_STATUS_CHANGED'; agentId: string; status: AgentStatus; taskId?: string | null }
-  | { type: 'AGENT_REWARDED'; agentId: string; coins: number; reason: string }
+  | { type: 'AGENT_REWARDED'; agentId: string; coins: number; reason: string; taskId?: string }
   | { type: 'CHAT_MESSAGE'; message: ChatMessage }
   | { type: 'PROJECT_COMPLETED'; projectId: string; summary: string; completedAt: string }
   | { type: 'COMPANY_RESET'; state: CompanyState }
@@ -357,7 +375,10 @@ type StampedEvent = { seq: number; at: string; event: OfficeEvent }
 | `CHAT_MESSAGE` | Director Chat |
 | `COMPANY_RESET` | 重設公司 |
 
-`score` 在 Phase 5 填入。
+Phase 5：
+- `TASK_COMPLETED.score` 是 `{ total, quality, speed, difficulty, review }`。Reducer 存進 `task.score`，並用它更新執行者的 performance，所以不需要另外的 performance 事件。
+- `AGENT_REWARDED.taskId`：任務的 payout 會帶 `taskId`，reducer 記在 `task.paid`；Owner 手動 Reward 沒有 `taskId`。
+- `TASK_STARTED.startedAt`：Speed 分數的起點。
 
 ## 7. Database ✅ Phase 3
 
@@ -367,6 +388,7 @@ type StampedEvent = { seq: number; at: string; event: OfficeEvent }
 - `npm run dev` / `npm start` 會先自動執行 `prisma generate && prisma db push`，不需要手動 migrate。
 - 寫入策略（`src/db.ts`）：每個事件寫入它影響到的實體列（upsert 最新狀態），並 append 到 `Event` 表。寫入依事件順序排隊，失敗只記 log，不影響模擬。
 - 啟動時從實體表載入狀態；資料庫是空的就寫入 seed 組織。
+- Phase 5 新增 `Task.score`（JSON）、`Task.paid`、`Task.startedAt`；`TASK_COMPLETED` 會同時更新執行者那一列（performance 變了）。舊的 `office.db` 在下次 `npm run dev` 時由 `db push` 自動加上欄位。
 
 ```mermaid
 erDiagram
@@ -413,7 +435,10 @@ erDiagram
     string priority
     int reward
     string result
+    string score "JSON TaskScore"
+    int paid
     datetime createdAt
+    datetime startedAt
     datetime completedAt
   }
   CHAT_MESSAGE {
@@ -459,6 +484,7 @@ type AgentRunResult = {
   title?: string                                    // plan: project title
   work?: { title; description; assignee; priority }[] // plan / split
   blocked?: string                                  // execute: cannot continue yet
+  quality?: number                                  // execute / review / summarize: 0–1, feeds the score
 }
 ```
 
@@ -466,6 +492,7 @@ type AgentRunResult = {
   - 依角色與 mode 回傳模板，並模擬延遲（例如 execute 6–10 s）。
   - Demo 題目（含 "random write"）使用手寫的完整內容：3 個工作流、6 個子任務、各自的技術結果、Manager review 與 Director 最終報告。Kenji 第一次執行會刻意遇到 Blocked。
   - 其他題目使用以主題為基礎的通用模板。
+  - `quality`：Demo 是寫好的（Alex 0.95、Mina 0.8 …），其他題目是 0.72–0.97 之間的固定雜湊值。
 - **Claude / OpenAI**：介面已固定，只需新增一個實作並在 `createProvider` 註冊（`LLM_PROVIDER=claude`）。
 
 ## 9. Repository 結構與取捨

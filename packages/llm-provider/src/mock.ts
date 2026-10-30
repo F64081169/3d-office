@@ -7,6 +7,7 @@ import {
   hash,
   isDemoPrompt,
   planProject,
+  qualityOf,
   reviewText,
   splitTask,
   summaryText,
@@ -69,12 +70,12 @@ export class MockProvider implements LLMProvider {
       case 'execute': {
         const reason = attempt === 0 ? blockReason(agent, task!, demo, this.blockRate) : undefined
         if (reason) return { text: reason, blocked: reason }
-        return { text: executeResult(agent, task!, demo) }
+        return { text: executeResult(agent, task!, demo), quality: qualityOf(agent, task!, demo) }
       }
       case 'review':
-        return { text: reviewText(agent, task!, childResults, demo) }
+        return { text: reviewText(agent, task!, childResults, demo), quality: qualityOf(agent, task!, demo) }
       case 'summarize':
-        return { text: summaryText(projectTitle ?? task!.title, childResults, demo) }
+        return { text: summaryText(projectTitle ?? task!.title, childResults, demo), quality: qualityOf(agent, task!, demo) }
       case 'chat':
         return { text: chatReply(agent, prompt, task) }
     }

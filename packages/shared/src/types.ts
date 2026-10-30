@@ -1,5 +1,7 @@
 /** Shared domain model. The server (Phase 3) and the web client both import these. */
 
+import type { TaskScore } from './scoring'
+
 export type Vec3 = {
   x: number
   y: number
@@ -44,7 +46,7 @@ export type TaskStatus = 'backlog' | 'assigned' | 'working' | 'blocked' | 'revie
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
-/** Coins a task is worth: Normal 100 · Hard 200 · Critical 500 (paid out in Phase 5). */
+/** Coins a task is worth: Normal 100 · Hard 200 · Critical 500, paid to the assignee on completion. */
 export const REWARD_BY_PRIORITY: Record<TaskPriority, number> = { low: 100, medium: 100, high: 200, critical: 500 }
 
 export type Task = {
@@ -69,8 +71,14 @@ export type Task = {
   reward: number
 
   result?: string
+  /** Set on completion. */
+  score?: TaskScore
+  /** Coins paid to the assignee for this task. */
+  paid?: number
 
   createdAt: string
+  /** First time work began (TASK_STARTED). */
+  startedAt?: string
   completedAt?: string
 }
 

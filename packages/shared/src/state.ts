@@ -1,5 +1,6 @@
 import type { OfficeEvent } from './events'
 import { SEED_AGENTS } from './org'
+import { nextPerformance } from './scoring'
 import type { Agent, ChatMessage, Project, Task } from './types'
 
 export type CompanyState = {
@@ -42,26 +43,32 @@ export function reduceEvent(s: CompanyState, e: OfficeEvent): CompanyState {
         status: t.status === 'backlog' ? 'assigned' : t.status,
       }))
     case 'TASK_STARTED':
-      return patchTask(s, e.taskId, () => ({ status: 'working', blockedReason: undefined }))
+      return patchTask(s, e.taskId, (t) => ({ status: 'working', blockedReason: undefined, startedAt: e.startedAt ?? t.startedAt }))
     case 'TASK_STATUS_CHANGED':
       return patchTask(s, e.taskId, () => ({
         status: e.status,
         blockedReason: e.status === 'blocked' ? e.reason : undefined,
       }))
-    case 'TASK_COMPLETED':
-      return patchTask(s, e.taskId, () => ({
+    case 'TASK_COMPLETED': {
+      const done = patchTask(s, e.taskId, () => ({
         status: 'completed',
         result: e.result,
+        score: e.score,
         completedAt: e.completedAt,
         blockedReason: undefined,
       }))
+      const score = e.score
+      return score ? patchAgent(done, e.agentId, (a) => ({ performance: nextPerformance(a.performance, score.total) })) : done
+    }
     case 'AGENT_STATUS_CHANGED':
       return patchAgent(s, e.agentId, (a) => ({
         status: e.status,
         currentTaskId: e.taskId === undefined ? a.currentTaskId : (e.taskId ?? undefined),
       }))
-    case 'AGENT_REWARDED':
-      return patchAgent(s, e.agentId, (a) => ({ coins: a.coins + e.coins }))
+    case 'AGENT_REWARDED': {
+      const paid = e.taskId ? patchTask(s, e.taskId, (t) => ({ paid: (t.paid ?? 0) + e.coins })) : s
+      return patchAgent(paid, e.agentId, (a) => ({ coins: a.coins + e.coins }))
+    }
     case 'CHAT_MESSAGE':
       return { ...s, messages: [...s.messages, e.message].slice(-MESSAGE_LIMIT) }
     case 'PROJECT_COMPLETED': {

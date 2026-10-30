@@ -53,7 +53,12 @@ model Task {
   priority      String
   reward        Int
   result        String?
+  /// JSON TaskScore, set on completion
+  score         String?
+  /// coins paid out for this task
+  paid          Int?
   createdAt     DateTime
+  startedAt     DateTime?
   completedAt   DateTime?
 
   @@index([projectId])

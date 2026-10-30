@@ -4,7 +4,9 @@ import {
   DIRECTOR_ID,
   directReports,
   OWNER_ID,
+  projectStats,
   projectTasks,
+  scoreTask,
   travelSeconds,
   type Agent,
   type AgentStatus,
@@ -12,6 +14,7 @@ import {
   type OfficeEvent,
   type Task,
   type TaskPriority,
+  type TaskScore,
 } from '@office/shared'
 import type { TaskEngine } from '@office/task-engine'
 
@@ -23,6 +26,13 @@ const BREAK_STAY: [number, number] = [14000, 24000]
 const AMBIENT_EVERY: [number, number] = [25000, 45000]
 const MAX_ON_BREAK = 2
 const MAX_ATTEMPTS = 3
+/**
+ * What a task should take from start to hand-in, in simulated seconds, by level (the
+ * walk to report is added per agent so desks far from the boss are not penalised).
+ */
+const EXPECTED_SECONDS: Record<number, number> = { 1: 16, 2: 45, 3: 110 }
+/** Quality assumed when a provider does not grade its own result. */
+const DEFAULT_QUALITY = 0.8
 
 const hash = (s: string) => {
   let h = 2166136261
@@ -52,6 +62,9 @@ type Ctx = {
 }
 
 class Cancelled extends Error {}
+
+/** What the agent's work was judged on: provider quality (0–1) and first-pass share (0–1). */
+type Grade = { quality?: number; firstPass?: number }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -236,7 +249,8 @@ export class AgentRuntime {
 
     await this.walkTo(ctx, employee.id, 'reporting', taskId)
     await ctx.pause(PAUSE.report)
-    this.finish(employee, taskId, res.blocked ? `Could not finish: ${res.blocked}` : res.text)
+    if (res.blocked) this.finish(employee, taskId, `Could not finish: ${res.blocked}`, { quality: 0, firstPass: 0, paid: false })
+    else this.finish(employee, taskId, res.text, { quality: res.quality, firstPass: 1 / (attempt + 1) })
     // Done with their part: about half the time they grab a coffee before the next thing.
     if (hash(taskId) < 0.5) setTimeout(() => this.takeBreak(employee.id), 0)
   }
@@ -266,7 +280,7 @@ export class AgentRuntime {
     )
     await this.walkTo(ctx, manager.id, 'reporting', taskId)
     await ctx.pause(PAUSE.report)
-    this.finish(manager, taskId, res.text)
+    this.finish(manager, taskId, res.text, { quality: res.quality })
   }
 
   private async finishProject(ctx: Ctx, director: Agent, projectId: string) {
@@ -287,16 +301,39 @@ export class AgentRuntime {
     )
     await this.walkTo(ctx, director.id, 'reporting', root.id)
     await ctx.pause(PAUSE.report)
-    this.engine.complete(root.id, res.text)
+    this.engine.complete(root.id, res.text, { score: this.score(director, root.id, { quality: res.quality }) })
     this.chat(director.id, director.id, res.text, project.id)
     this.engine.completeProject(project.id, res.text)
   }
 
-  /** Complete a task; work the Owner assigned directly is reported back in chat. */
-  private finish(agent: Agent, taskId: string, result: string) {
-    this.engine.complete(taskId, result)
+  /** Complete, score and pay a task; work the Owner assigned directly is reported back in chat. */
+  private finish(agent: Agent, taskId: string, result: string, grade: Grade & { paid?: boolean }) {
+    const score = this.score(agent, taskId, grade)
+    this.engine.complete(taskId, result, { score, paid: grade.paid })
     const t = this.engine.task(taskId)
-    if (t.createdBy === OWNER_ID && !t.parentTaskId) this.chat(agent.id, agent.id, `Done: **${t.title}**\n${result}`)
+    if (t.createdBy === OWNER_ID && !t.parentTaskId) {
+      const earned = grade.paid === false ? '' : ` · +${t.reward} coins`
+      this.chat(agent.id, agent.id, `Done: **${t.title}** (score ${score.total}${earned})\n${result}`)
+    }
+  }
+
+  /**
+   * Score a finished task. Speed compares simulated time since TASK_STARTED with the
+   * estimate; leaders' first-pass rate is their team's (the review marks of the subtasks).
+   */
+  private score(agent: Agent, taskId: string, { quality, firstPass }: Grade): TaskScore {
+    const s = this.getState()
+    const t = this.engine.task(taskId)
+    const kids = childrenOf(s, taskId).filter((k) => k.score)
+    const teamPass = kids.length ? kids.reduce((sum, k) => sum + k.score!.review, 0) / (10 * kids.length) : 1
+    const started = Date.parse(t.startedAt ?? t.createdAt)
+    return scoreTask({
+      priority: t.priority,
+      quality: quality ?? DEFAULT_QUALITY,
+      seconds: ((Date.parse(this.now()) - started) / 1000) * this.speed,
+      expectedSeconds: (EXPECTED_SECONDS[agent.level] ?? EXPECTED_SECONDS[1]) + travelSeconds(agent, 'working', 'reporting', s.agents),
+      firstPass: firstPass ?? teamPass,
+    })
   }
 
   private async reply(agentId: string, text: string) {
@@ -324,8 +361,10 @@ export class AgentRuntime {
           const tasks = projectTasks(s, p.id)
           const done = tasks.filter((t) => t.status === 'completed').length
           const blocked = tasks.filter((t) => t.status === 'blocked')
+          const { coinsPaid, averageScore } = projectStats(s, p.id)
+          const earned = averageScore ? ` ${coinsPaid} coins paid so far, average score ${averageScore}.` : ''
           return [
-            `**${p.title}**: ${done}/${tasks.length} tasks done.`,
+            `**${p.title}**: ${done}/${tasks.length} tasks done.${earned}`,
             ...blocked.map((t) => `• Blocked: ${t.title} (${this.agent(t.assignedTo)?.name}): ${t.blockedReason}`),
           ]
         })

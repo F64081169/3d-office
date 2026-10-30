@@ -53,6 +53,8 @@ export type AgentRunResult = {
   work?: WorkPlan[]
   /** execute: set when the agent cannot continue yet. */
   blocked?: string
+  /** execute / review / summarize: how good the result is, 0–1 (feeds the task score). */
+  quality?: number
 }
 
 export interface LLMProvider {

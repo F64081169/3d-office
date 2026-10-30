@@ -1,6 +1,7 @@
 import {
   createCompanyState,
   HOME_SEATS,
+  projectStats,
   reduceEvent,
   type Agent,
   type AgentStatus,
@@ -19,8 +20,8 @@ export type CameraShot = { position: Tuple3; target: Tuple3; nonce: number }
 
 export type RenderStats = { fps: number; calls: number; triangles: number }
 
-/** Short-lived floating text in the 3D world ("+100 Coins", "Task done", purrs). */
-export type FloatEffect = { id: number; anchorId: string; text: string; kind: 'coins' | 'love' | 'done' }
+/** Short-lived floating text in the 3D world ("+100 Coins", "Score 94", purrs). `slot` stacks effects on one anchor. */
+export type FloatEffect = { id: number; anchorId: string; text: string; kind: 'coins' | 'love' | 'done'; slot: number }
 
 export type Toast = { id: number; kind: 'success' | 'info' | 'error'; title: string; body?: string; projectId?: string }
 
@@ -56,6 +57,7 @@ type OfficeState = CompanyState & {
   activeView: string | null
   introDone: boolean
   showStats: boolean
+  dashboardOpen: boolean
   stats: RenderStats
   effects: FloatEffect[]
   toasts: Toast[]
@@ -89,6 +91,7 @@ type OfficeState = CompanyState & {
   finishIntro: () => void
   clearActiveView: () => void
   toggleStats: () => void
+  setDashboardOpen: (open: boolean) => void
   setStats: (stats: RenderStats) => void
   setCat: (patch: Partial<CatState>) => void
   petCat: () => void
@@ -104,6 +107,8 @@ let disconnect: (() => void) | null = null
 let connectToken = 0
 const EFFECT_MS = 1800
 const TOAST_MS = 7000
+/** A task's payout floats up just after its score. */
+const PAYOUT_DELAY_MS = 450
 
 /** Camera shot framing an agent from a 3/4 front angle, wherever they are right now. */
 function agentShot(agent: Agent): CameraShot {
@@ -128,7 +133,8 @@ const company = (s: CompanyState): CompanyState => ({
 
 export const useOfficeStore = create<OfficeState>((set, get) => {
   const spawnEffect = (anchorId: string, text: string, kind: FloatEffect['kind']) => {
-    const effect = { id: ++effectId, anchorId, text, kind }
+    const slot = get().effects.filter((e) => e.anchorId === anchorId).length
+    const effect = { id: ++effectId, anchorId, text, kind, slot }
     set((s) => ({ effects: [...s.effects, effect] }))
     setTimeout(() => set((s) => ({ effects: s.effects.filter((e) => e.id !== effect.id) })), EFFECT_MS)
   }
@@ -176,6 +182,7 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
     activeView: null,
     introDone: false,
     showStats: false,
+    dashboardOpen: false,
     stats: { fps: 0, calls: 0, triangles: 0 },
     effects: [],
     toasts: [],
@@ -213,12 +220,17 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
       set((s) => company(reduceEvent(s, event)))
       const s = get()
       switch (event.type) {
-        case 'AGENT_REWARDED':
-          set((st) => ({ lastRewardAt: { ...st.lastRewardAt, [event.agentId]: performance.now() } }))
-          spawnEffect(event.agentId, `+${event.coins} Coins`, 'coins')
+        case 'AGENT_REWARDED': {
+          const cheer = () => {
+            set((st) => ({ lastRewardAt: { ...st.lastRewardAt, [event.agentId]: performance.now() } }))
+            spawnEffect(event.agentId, `+${event.coins} Coins`, 'coins')
+          }
+          if (event.taskId) setTimeout(cheer, PAYOUT_DELAY_MS)
+          else cheer()
           break
+        }
         case 'TASK_COMPLETED':
-          spawnEffect(event.agentId, 'Task done', 'done')
+          spawnEffect(event.agentId, event.score ? `Score ${event.score.total}` : 'Task done', 'done')
           break
         case 'CHAT_MESSAGE': {
           const m = event.message
@@ -232,7 +244,9 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
         }
         case 'PROJECT_COMPLETED': {
           const p = s.projects[event.projectId]
-          pushToast({ kind: 'success', title: 'Project Completed', body: p?.title, projectId: event.projectId })
+          const { coinsPaid, averageScore } = projectStats(s, event.projectId)
+          const body = [p?.title, `${coinsPaid.toLocaleString()} coins distributed`, averageScore && `average score ${averageScore}`]
+          pushToast({ kind: 'success', title: 'Project Completed', body: body.filter(Boolean).join(' · '), projectId: event.projectId })
           break
         }
         case 'COMPANY_RESET':
@@ -276,9 +290,11 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
         set({ cameraShot: { position: p.position, target: p.target, nonce: ++nonce }, activeView: id, followId: null })
       }
     },
-    finishIntro: () => set({ introDone: true, activeView: 'overview' }),
+    // The fly-in ends on the overview, unless a shot interrupted it (that view stays highlighted).
+    finishIntro: () => set((s) => ({ introDone: true, activeView: s.activeView ?? 'overview' })),
     clearActiveView: () => set((s) => ({ activeView: s.followId ? s.activeView : null })),
     toggleStats: () => set((s) => ({ showStats: !s.showStats })),
+    setDashboardOpen: (open) => set({ dashboardOpen: open }),
     setStats: (stats) => set({ stats }),
     setCat: (patch) => set((s) => ({ cat: { ...s.cat, ...patch } })),
     petCat: () => {

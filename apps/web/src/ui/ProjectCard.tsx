@@ -1,5 +1,6 @@
-import { childrenOf } from '@office/shared'
+import { childrenOf, projectStats } from '@office/shared'
 import { useOfficeStore } from '../store/officeStore'
+import { CoinIcon } from './icons'
 import { Badge } from './StatusBadge'
 import { TASK_STATUS_META } from './taskMeta'
 
@@ -31,6 +32,7 @@ export function ProjectCard({ projectId }: { projectId: string }) {
       </div>
       <div className="pc-meta">
         {done}/{all.length} tasks done
+        {completed && <Payout projectId={projectId} />}
       </div>
       <ul className="pc-list">
         {childrenOf(state, project.rootTaskId).map((w) => {
@@ -51,5 +53,17 @@ export function ProjectCard({ projectId }: { projectId: string }) {
         })}
       </ul>
     </div>
+  )
+}
+
+/** Coins paid out and the average score, once a project is delivered. */
+function Payout({ projectId }: { projectId: string }) {
+  const tasks = useOfficeStore((s) => s.tasks)
+  const { coinsPaid, averageScore } = projectStats({ agents: [], tasks, projects: {}, messages: [] }, projectId)
+  return (
+    <>
+      {' · '}
+      <CoinIcon size={11} /> {coinsPaid.toLocaleString()} paid{averageScore && ` · average score ${averageScore}`}
+    </>
   )
 }

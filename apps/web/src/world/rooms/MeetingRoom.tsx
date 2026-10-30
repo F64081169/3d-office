@@ -1,9 +1,10 @@
 import { useAssets } from '../../assets/AssetProvider'
 import { MAT } from '../../assets/materials'
 import { Box, Cylinder, GEO } from '../../assets/primitives'
-import { glowTexture, meetingScreenTexture } from '../../assets/textures'
+import { glowTexture } from '../../assets/textures'
 import { GlassWall } from '../Building'
 import { CEILING_H, MEETING_DOOR, MEETING_SEATS, MEETING_TABLE, ZONES } from '../layout'
+import { CompanyBoardScreen } from './CompanyBoard'
 import { HangingSign } from './Workspace'
 import * as THREE from 'three'
 
@@ -37,9 +38,7 @@ export function MeetingRoom() {
       {/* Wall display on the shared wall with the Director's office */}
       <group position={[Z.minX + 0.1, 1.55, T.z]} rotation-y={Math.PI / 2}>
         <Box size={[3.3, 1.9, 0.05]} material={MAT.screenBezel} cast={false} />
-        <mesh geometry={GEO.plane} scale={[3.2, 1.8, 1]} position={[0, 0, 0.026]}>
-          <meshBasicMaterial map={meetingScreenTexture()} toneMapped={false} />
-        </mesh>
+        <CompanyBoardScreen scale={[3.2, 1.8, 1]} position={[0, 0, 0.026]} />
         <mesh geometry={GEO.plane} scale={[5, 3.2, 1]} position={[0, 0, -0.03]}>
           <meshBasicMaterial
             map={glowTexture()}

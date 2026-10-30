@@ -5,6 +5,7 @@ import { AgentTags } from '../agents/tags'
 import { useOfficeStore } from '../store/officeStore'
 import { CAMERA_PRESETS } from '../world/layout'
 import { ChatPanel } from './ChatPanel'
+import { Dashboard, Pulse } from './Dashboard'
 import { SidePanel } from './SidePanel'
 import { StatusBadge } from './StatusBadge'
 import { Toasts } from './Toasts'
@@ -15,6 +16,7 @@ export function Hud() {
   const select = useOfficeStore((s) => s.select)
   const follow = useOfficeStore((s) => s.follow)
   const connect = useOfficeStore((s) => s.connect)
+  const setDashboardOpen = useOfficeStore((s) => s.setDashboardOpen)
 
   useEffect(() => connect(), [connect])
 
@@ -23,13 +25,15 @@ export function Hud() {
       if ((e.target as HTMLElement)?.closest?.('input, textarea')) return
       if (e.key === '`' || e.key.toLowerCase() === 'p') toggleStats()
       if (e.key === 'Escape') {
+        // Close the topmost thing first: the dashboard, then the panel / follow cam.
+        if (useOfficeStore.getState().dashboardOpen) return setDashboardOpen(false)
         select(null)
         follow(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggleStats, select, follow])
+  }, [toggleStats, select, follow, setDashboardOpen])
 
   return (
     <div className={`hud ${introDone ? 'hud--ready' : ''}`}>
@@ -39,8 +43,10 @@ export function Hud() {
         <Roster />
         <ChatPanel />
       </div>
+      <Pulse />
       <ViewBar />
       <SidePanel />
+      <Dashboard />
       <Toasts />
       <Help />
       {!introDone && <div className="intro-hint">Entering Claude Office · click or drag to skip</div>}
@@ -56,7 +62,7 @@ function Brand() {
         <div className="brand__title">Claude Office</div>
         <div className="brand__subtitle">AI Agent Company Simulator</div>
       </div>
-      <span className="chip">MVP · Phase 4</span>
+      <span className="chip">MVP · Phase 5</span>
     </header>
   )
 }

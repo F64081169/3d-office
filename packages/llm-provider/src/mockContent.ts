@@ -254,6 +254,24 @@ export function executeResult(agent: Agent, task: Task, demo: boolean): string {
   ].join('\n')
 }
 
+/** Mock judgement of a result, 0–1. The demo is scripted so the scoreboard tells a story. */
+export function qualityOf(agent: Agent, task: Task, demo: boolean): number {
+  const scripted = demo ? DEMO_QUALITY[agent.id] : undefined
+  return scripted ?? 0.72 + ((hash(task.id + agent.id) % 1000) / 1000) * 0.25
+}
+
+const DEMO_QUALITY: Record<string, number> = {
+  director: 0.95,
+  'eng-manager': 0.9,
+  'research-manager': 0.92,
+  'eng-a': 0.95,
+  'eng-b': 0.9,
+  'eng-c': 0.85,
+  'research-a': 0.9,
+  'research-b': 0.8,
+  'qa-agent': 0.95,
+}
+
 export function blockReason(agent: Agent, task: Task, demo: boolean, blockRate: number): string | undefined {
   if (demo) return agent.id === DEMO.block.agent ? DEMO.block.reason : undefined
   if ((hash(task.id) % 1000) / 1000 >= blockRate) return undefined

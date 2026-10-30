@@ -1,13 +1,23 @@
-import { childrenOf, directReports, OWNER_ID, REWARD_BY_PRIORITY, type AgentStatus, type TaskPriority } from '@office/shared'
-import { useEffect, useRef, useState } from 'react'
+import {
+  agentRecord,
+  childrenOf,
+  directReports,
+  OWNER_ID,
+  REWARD_BY_PRIORITY,
+  type AgentStatus,
+  type Task,
+  type TaskPriority,
+} from '@office/shared'
+import { useEffect, useMemo, useState } from 'react'
 import { APPEARANCE, DEFAULT_APPEARANCE } from '../agents/appearance'
 import { DEPT_COLOR, STATUS_META } from '../agents/status'
 import { CAT_ID, DIRECTOR, useOfficeStore } from '../store/officeStore'
 import { CAT_ACTIVITY, CAT_COLOR, CAT_NAME } from '../world/cat/catInfo'
+import { CountUp } from './CountUp'
 import { CoinIcon, HeartIcon, PawIcon } from './icons'
 import { RichText } from './RichText'
 import { Badge, StatusBadge } from './StatusBadge'
-import { PRIORITY_LABEL, TASK_STATUS_META, timeOf } from './taskMeta'
+import { PRIORITY_LABEL, scoreColor, TASK_STATUS_META, timeOf } from './taskMeta'
 
 const STATUSES = Object.keys(STATUS_META) as AgentStatus[]
 const PRIORITIES = Object.keys(PRIORITY_LABEL) as TaskPriority[]
@@ -32,8 +42,10 @@ function AgentPanel({ id }: { id: string }) {
   const previewStatus = useOfficeStore((s) => s.previewStatus)
   const [assigning, setAssigning] = useState(false)
   const agent = agents.find((a) => a.id === id)
+  const record = useMemo(() => agentRecord({ agents, tasks, projects: {}, messages: [] }, id), [agents, tasks, id])
   useEffect(() => setAssigning(false), [id])
   if (!agent) return null
+  const perfDelta = agent.performance - (record.startPerformance ?? agent.performance)
 
   const manager = agents.find((a) => a.id === agent.managerId)
   const reports = directReports(agents, agent.id)
@@ -110,6 +122,29 @@ function AgentPanel({ id }: { id: string }) {
           </span>
         </div>
       </div>
+      <div className="sp-record">
+        {record.completed > 0 && record.averageScore ? (
+          <>
+            <span>
+              <b>{record.completed}</b> task{record.completed === 1 ? '' : 's'} done
+            </span>
+            <span>
+              avg score <b style={{ color: scoreColor(record.averageScore) }}>{record.averageScore}</b>
+            </span>
+            <span>
+              <b>+{record.earned.toLocaleString()}</b> coins earned
+            </span>
+            {perfDelta !== 0 && (
+              <span className={perfDelta > 0 ? 'up' : 'down'}>
+                {perfDelta > 0 ? '▲' : '▼'}
+                {Math.abs(perfDelta)} performance
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="muted">No scored tasks yet. Each finished task adds a score and pays its reward.</span>
+        )}
+      </div>
 
       <section className="sp-section">
         <h4>Skills</h4>
@@ -163,7 +198,11 @@ function AgentPanel({ id }: { id: string }) {
               <li key={t.id}>
                 <button onClick={() => viewTask(t.id)}>
                   <span>{t.title}</span>
-                  <Badge label={TASK_STATUS_META[t.status].label} color={TASK_STATUS_META[t.status].color} />
+                  {t.score ? (
+                    <ScorePill total={t.score.total} />
+                  ) : (
+                    <Badge label={TASK_STATUS_META[t.status].label} color={TASK_STATUS_META[t.status].color} />
+                  )}
                 </button>
               </li>
             ))}
@@ -310,6 +349,8 @@ function TaskView({ id }: { id: string }) {
         <dd>{timeOf(task.completedAt)}</dd>
       </dl>
 
+      {task.score && <ScoreCard task={task} assignee={name(task.assignedTo)} />}
+
       {task.description && task.description !== task.title && <p className="task-desc">{task.description}</p>}
       {task.status === 'blocked' && task.blockedReason && <div className="task-blocked">Blocked: {task.blockedReason}</div>}
 
@@ -324,7 +365,11 @@ function TaskView({ id }: { id: string }) {
                     {c.title}
                     <small>{name(c.assignedTo)}</small>
                   </span>
-                  <Badge label={TASK_STATUS_META[c.status].label} color={TASK_STATUS_META[c.status].color} />
+                  {c.score ? (
+                    <ScorePill total={c.score.total} />
+                  ) : (
+                    <Badge label={TASK_STATUS_META[c.status].label} color={TASK_STATUS_META[c.status].color} />
+                  )}
                 </button>
               </li>
             ))}
@@ -401,32 +446,50 @@ function CatPanel() {
   )
 }
 
-/** Animated number that counts toward its value and pulses when it goes up. */
-function CountUp({ value }: { value: number }) {
-  const [shown, setShown] = useState(value)
-  const [bump, setBump] = useState(false)
-  const from = useRef(value)
-  useEffect(() => {
-    const start = performance.now()
-    const a = from.current
-    let raf = 0
-    const tick = (t: number) => {
-      const k = Math.min(1, (t - start) / 700)
-      const v = Math.round(a + (value - a) * (1 - Math.pow(1 - k, 3)))
-      setShown(v)
-      from.current = v
-      if (k < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    if (value > a) {
-      setBump(true)
-      const t = setTimeout(() => setBump(false), 700)
-      return () => {
-        cancelAnimationFrame(raf)
-        clearTimeout(t)
-      }
-    }
-    return () => cancelAnimationFrame(raf)
-  }, [value])
-  return <b className={bump ? 'bump' : ''}>{shown.toLocaleString()}</b>
+function ScorePill({ total }: { total: number }) {
+  return (
+    <span className="score-pill" style={{ '--score': scoreColor(total) } as React.CSSProperties}>
+      {total}
+    </span>
+  )
+}
+
+/** How a finished task scored: 50 base + four parts, and what it paid. */
+function ScoreCard({ task, assignee }: { task: Task; assignee: string }) {
+  const s = task.score!
+  const parts: [string, number, number][] = [
+    ['Base', 50, 50],
+    ['Quality', s.quality, 20],
+    ['Speed', s.speed, 10],
+    ['Difficulty', s.difficulty, 10],
+    ['Review', s.review, 10],
+  ]
+  return (
+    <section className="score-card" style={{ '--score': scoreColor(s.total) } as React.CSSProperties}>
+      <div className="score-card__total">
+        <b>{s.total}</b>
+        <small>/100</small>
+        <span>Score</span>
+      </div>
+      <ul className="score-card__parts">
+        {parts.map(([label, value, max]) => (
+          <li key={label}>
+            <span>{label}</span>
+            <span className="bar">
+              <span style={{ width: `${(value / max) * 100}%` }} />
+            </span>
+            <b>
+              {value}
+              <small>/{max}</small>
+            </b>
+          </li>
+        ))}
+      </ul>
+      {!!task.paid && (
+        <div className="score-card__paid">
+          <CoinIcon size={13} /> {task.paid} coins paid to {assignee}
+        </div>
+      )}
+    </section>
+  )
 }

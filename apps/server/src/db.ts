@@ -37,7 +37,10 @@ const taskRow = (t: Task) => ({
   priority: t.priority,
   reward: t.reward,
   result: t.result ?? null,
+  score: t.score ? JSON.stringify(t.score) : null,
+  paid: t.paid ?? null,
   createdAt: new Date(t.createdAt),
+  startedAt: date(t.startedAt),
   completedAt: date(t.completedAt),
 })
 
@@ -102,7 +105,10 @@ export function openDatabase(url: string, log: (msg: string) => void) {
             priority: t.priority as Task['priority'],
             reward: t.reward,
             result: opt(t.result),
+            score: t.score ? (JSON.parse(t.score) as Task['score']) : undefined,
+            paid: opt(t.paid),
             createdAt: t.createdAt.toISOString(),
+            startedAt: iso(t.startedAt),
             completedAt: iso(t.completedAt),
           },
         ]),
@@ -164,12 +170,18 @@ export function openDatabase(url: string, log: (msg: string) => void) {
       case 'TASK_ASSIGNED':
       case 'TASK_STARTED':
       case 'TASK_STATUS_CHANGED':
-      case 'TASK_COMPLETED':
         await upsertTask(event.taskId)
         break
+      case 'TASK_COMPLETED':
+        await upsertTask(event.taskId)
+        await upsertAgent(event.agentId) // performance moved
+        break
       case 'AGENT_STATUS_CHANGED':
+        await upsertAgent(event.agentId)
+        break
       case 'AGENT_REWARDED':
         await upsertAgent(event.agentId)
+        if (event.taskId) await upsertTask(event.taskId)
         break
       case 'CHAT_MESSAGE': {
         const m = event.message

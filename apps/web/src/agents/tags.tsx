@@ -160,7 +160,7 @@ function FloatingEffect({ effect }: { effect: FloatEffect }) {
       }}
       className="float-effect"
       data-kind={effect.kind}
-      style={{ display: 'none' }}
+      style={{ display: 'none', '--slot': effect.slot } as React.CSSProperties}
     >
       <span>
         {effect.kind === 'coins' && <CoinIcon />}

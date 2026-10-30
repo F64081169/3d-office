@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { MockProvider } from '@office/llm-provider'
-import { createCompanyState, reduceEvent, type CompanyState, type OfficeEvent } from '@office/shared'
+import { createCompanyState, nextPerformance, reduceEvent, type CompanyState, type OfficeEvent } from '@office/shared'
 import { TaskEngine } from '@office/task-engine'
 import { AgentRuntime } from '../src/index'
 
@@ -43,6 +43,7 @@ const until = async (cond: () => boolean, ms = 15000) => {
 
 test('demo project: Director → Managers → Employees → report to Owner', async () => {
   const { runtime, getState, log } = company()
+  const seed = getState()
   runtime.ownerMessage('director', DEMO)
   await until(() => log.some((e) => e.type === 'PROJECT_COMPLETED'))
   await until(() => getState().agents.every((a) => a.status === 'idle'))
@@ -82,6 +83,24 @@ test('demo project: Director → Managers → Employees → report to Owner', as
   assert.ok((['thinking', 'working', 'reporting'] as const).every((st) => statusesOf('eng-a').includes(st)))
   assert.ok(statusesOf('eng-c').includes('blocked'), 'Kenji hits the scripted block once')
 
+  // Phase 5: every task is scored and paid on completion; the scripted block costs Kenji.
+  for (const t of tasks) {
+    assert.ok(t.score && t.score.total >= 52 && t.score.total <= 100, `${t.title} scored`)
+    const rewards = log.filter((e) => e.type === 'AGENT_REWARDED' && e.reason === `Completed: ${t.title}`)
+    assert.deepEqual(rewards.map((e) => e.type === 'AGENT_REWARDED' && [e.agentId, e.coins]), [[t.assignedTo, t.reward]])
+  }
+  const kenji = subtasks.find((t) => t.assignedTo === 'eng-c')!.score!
+  assert.equal(kenji.review, 5, 'needed a second attempt')
+  assert.ok(subtasks.every((t) => t.assignedTo === 'eng-c' || t.score!.total > kenji.total))
+  assert.equal(tasks.find((t) => !t.parentTaskId)!.score!.difficulty, 10)
+  const paid = s.agents.reduce((sum, a) => sum + a.coins, 0) - seed.agents.reduce((sum, a) => sum + a.coins, 0)
+  assert.equal(paid, 6 * 100 + 3 * 200 + 500)
+  // Performance moved by exactly the scores, in completion order.
+  for (const a of seed.agents) {
+    const scores = log.flatMap((e) => (e.type === 'TASK_COMPLETED' && e.agentId === a.id && e.score ? [e.score.total] : []))
+    assert.equal(s.agents.find((x) => x.id === a.id)!.performance, scores.reduce(nextPerformance, a.performance))
+  }
+
   // The Owner hears from the Director only: ack, project created, final report.
   const directorMsgs = s.messages.filter((m) => m.from === 'director').map((m) => m.text)
   assert.equal(directorMsgs[0], 'Understood. I am creating a project and assigning work.')
@@ -97,7 +116,8 @@ test('owner can assign directly to an employee and gets the result in chat', asy
   const task = Object.values(getState().tasks)[0]
   assert.equal(task.status, 'completed')
   assert.equal(task.createdBy, 'owner')
-  assert.match(getState().messages.at(-1)!.text, /^Done: \*\*Summarise competitor pricing\*\*/)
+  assert.match(getState().messages.at(-1)!.text, /^Done: \*\*Summarise competitor pricing\*\* \(score \d+ · \+100 coins\)/)
+  assert.equal(getState().agents.find((a) => a.id === 'research-b')!.coins, 290 + 100)
 })
 
 test('director answers progress questions without starting a project', async () => {

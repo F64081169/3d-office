@@ -11,6 +11,8 @@ export const config = {
   speed: num(process.env.SIM_SPEED, 1),
   /** Chance that a non-demo task blocks on its first attempt (Mock provider). */
   blockRate: num(process.env.MOCK_BLOCK_RATE, 0.1),
+  /** Idle agents occasionally take breaks so the office never looks frozen. AMBIENT=0 disables it. */
+  ambient: process.env.AMBIENT !== '0',
   /** Serve the built web app (apps/web/dist) when it exists. Set SERVE_WEB=0 to disable. */
   serveWeb: process.env.SERVE_WEB !== '0',
 }

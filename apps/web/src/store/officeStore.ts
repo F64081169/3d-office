@@ -9,6 +9,7 @@ import {
   type StampedEvent,
 } from '@office/shared'
 import { create } from 'zustand'
+import { getAnchorPose } from '../agents/anchors'
 import { api, streamEvents, type NewTaskInput } from '../net/api'
 import { CAMERA_PRESETS } from '../world/layout'
 
@@ -42,6 +43,8 @@ type OfficeState = CompanyState & {
   seq: number
   connection: Connection
   provider: string
+  /** Server simulation speed: avatars walk WALK_SPEED × simSpeed so they arrive when the server expects. */
+  simSpeed: number
 
   cat: CatState
   hoveredId: string | null
@@ -102,12 +105,13 @@ let connectToken = 0
 const EFFECT_MS = 1800
 const TOAST_MS = 7000
 
-/** Camera shot framing an agent from a 3/4 front angle. */
+/** Camera shot framing an agent from a 3/4 front angle, wherever they are right now. */
 function agentShot(agent: Agent): CameraShot {
-  const yaw = HOME_SEATS[agent.id]?.rotationY ?? 0
+  const live = getAnchorPose(agent.id)
+  const yaw = live?.yaw ?? HOME_SEATS[agent.id]?.rotationY ?? 0
   const fx = Math.sin(yaw)
   const fz = Math.cos(yaw)
-  const { x, z } = agent.position
+  const { x, z } = live ?? agent.position
   return {
     position: [x + fx * 2.6 + fz * 1.6, 2.6, z + fz * 2.6 - fx * 1.6],
     target: [x + fx * 0.3, 1.0, z + fz * 0.3],
@@ -152,7 +156,7 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
 
   const loadSnapshot = async () => {
     const snap = await api.snapshot()
-    set({ ...company(snap.state), seq: snap.seq, provider: snap.provider })
+    set({ ...company(snap.state), seq: snap.seq, provider: snap.provider, simSpeed: snap.speed ?? 1 })
     return snap.seq
   }
 
@@ -161,6 +165,7 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
     seq: 0,
     connection: 'connecting',
     provider: 'mock',
+    simSpeed: 1,
 
     cat: { activity: 'wandering', place: 'the office', pets: 0 },
     hoveredId: null,

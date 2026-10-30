@@ -1,6 +1,6 @@
 # Agent Flow — Director → Manager → Employee
 
-> 任務流程已在 Phase 3 實作（`packages/agent-runtime`，測試見 `packages/agent-runtime/test/demo.test.ts`）。Agent 走動是 Phase 4，計分與發幣是 Phase 5。
+> 任務流程在 Phase 3 實作（`packages/agent-runtime`，測試見 `packages/agent-runtime/test/demo.test.ts`）；Agent 走動在 Phase 4 實作（目的地與路徑：`packages/shared/src/world.ts`）。計分與發幣是 Phase 5。
 
 ## 1. 組織圖
 
@@ -100,6 +100,7 @@ sequenceDiagram
   D->>D: split → 3 tasks
   Note over D,RM: AGENT_STATUS_CHANGED → meeting (Director + Managers)
   D->>UI: Director 與 Managers 走進 Meeting Room
+  Note over D,RM: 全員入座後才開始 5 秒的會議
   D->>EM: TASK_ASSIGNED Engineering Task
   D->>RM: TASK_ASSIGNED Research Task + QA Task
   Note over EM,RM: Managers 回到座位 (meeting → thinking)
@@ -111,14 +112,14 @@ sequenceDiagram
   E->>UI: TASK_COMPLETED + AGENT_REWARDED (+100 Coins 浮字)
   E->>EM: reporting（走到 Marcus 桌前）
   E->>RM: reporting（走到 Sofia 桌前）
-  Note over E: 回報完 → idle，走回座位
+  Note over E: 回報完 → idle，走回座位（約一半的人接著去 Lounge 休息）
 
   EM->>EM: review + roll-up
   RM->>RM: review + roll-up
-  EM->>D: reporting（走到 Director Office）
-  RM->>D: reporting（走到 Director Office）
+  EM->>D: reporting（走進 Director Office，坐訪客椅）
+  RM->>D: reporting（走進 Director Office，坐訪客椅）
   D->>D: review + integrate
-  D->>UI: Director 回辦公室，狀態 reporting
+  D->>UI: Director 走回辦公室，站在桌旁，狀態 reporting
   D-->>Owner: Consolidated report（Director Chat）
   Note over D,UI: PROJECT_COMPLETED → Coins distributed → Performance updated
   UI-->>Owner: Toast「Project Completed」
@@ -137,8 +138,9 @@ stateDiagram-v2
   blocked --> working: retry
   working --> reporting: result ready (TASK_COMPLETED)
   reporting --> idle: manager acknowledged
-  idle --> break: idle long enough (optional)
-  break --> idle
+  idle --> break: 完成任務後（約一半）/ 閒置時隨機
+  break --> idle: 14–24 s 後走回座位
+  break --> thinking: TASK_ASSIGNED（立刻走回座位）
 ```
 
 ### Manager
@@ -152,6 +154,8 @@ stateDiagram-v2
   working --> working: tracking (wait for all subtasks)
   working --> reporting: all subtasks reviewed
   reporting --> idle: Director acknowledged
+  idle --> break: 閒置時隨機（Coffee Bar）
+  break --> idle
 ```
 
 ### Director
@@ -167,25 +171,38 @@ stateDiagram-v2
   reporting --> idle: PROJECT_COMPLETED
 ```
 
-## 6. Status → 3D 對照
+## 6. Status → 3D 對照 ✅
 
 | Status | 3D 目的地 | 姿勢 | 名牌 |
 | --- | --- | --- | --- |
 | `idle` | 自己座位 | 坐著放鬆 | ⚪ Idle |
 | `thinking` | 自己座位 | 坐著、手托下巴 | 🟣 Thinking |
 | `working` | 自己座位 | 打字，螢幕切換 | 🟢 Working |
-| `meeting` | Meeting Room 座位 | 走過去入座 | 🔵 Meeting |
-| `reporting` | 主管桌前 | 走過去站著 | 🟡 Reporting |
-| `break` | Lounge / Coffee Bar | 走過去 | 🟠 Break |
+| `meeting` | Meeting Room 固定座位 | 走過去入座，說話手勢 | 🔵 Meeting |
+| `reporting` | 見下表 | 走過去站著 / 坐訪客椅 | 🟡 Reporting |
+| `break` | 見下表 | 走過去坐下 / 站著拿咖啡 | 🟠 Break |
 | `blocked` | 原地 | 紅色光圈 | 🔴 Blocked |
 
-座位資料：`HOME_SEATS`（`packages/shared/src/org.ts`）、`MEETING_SEATS`（`apps/web/src/world/layout.ts`）。
+各人的目的地（`placeFor`，`packages/shared/src/world.ts`）：
+
+| Agent | Meeting 座位 | Reporting | Break |
+| --- | --- | --- | --- |
+| Aria（Director） | 西側主位，背對大螢幕 | 自己辦公桌旁站著（對 Owner 報告） | 辦公室窗邊站著 |
+| Marcus / Sofia（Managers） | 會議桌南側 | Director Office 訪客椅 | Coffee Bar 吧台站著 |
+| Alex / Priya / Kenji | 會議桌南側 | 在 Marcus 桌前排成一排站著 | Lounge 沙發 / 單人椅 |
+| Leo / Mina / Omar | 會議桌北側 | 在 Sofia 桌前排成一排站著 | Lounge 單人椅 / 沙發 |
+
+規則：
+
+- 路徑：沿目前位置的支線退回走道 → 走道最短路徑 → 進入目的地支線。不穿牆、不瞬移；走到一半目的地改變時，先沿原路退回再改道。
+- 時間軸：runtime 用同一份路徑長度計算抵達時間。Kickoff meeting 等 Director 與 Managers 全部入座後才開始；回報等人走到主管面前才開始。
+- 休息：Employee 完成任務後約一半會去休息；另外每 25–45 秒隨機讓一位閒置的 Agent 去休息（最多 2 人同時休息，`AMBIENT=0` 關閉）。休息時被指派任務會立刻走回座位。
 
 實作進度：
 
-- ✅ Phase 2：座位上的部分已完成，包括 idle / thinking / working / blocked 的姿勢、螢幕內容、名牌與警示光圈。可從 Agent Panel 的 Status preview 手動觸發。
-- ✅ Phase 3：所有狀態都由 runtime 依真實任務進度發出，例如 Director / Managers 的 kickoff `meeting`、Employees 的 `reporting`、Kenji 的 `blocked`。螢幕在 working 與 reporting 時顯示 code / 文件。
-- 🔜 Phase 4：需要移動的部分（meeting / reporting / break），沿用 `world/navigation.ts` 的導航圖。目前這些狀態在名牌、Roster 與 Panel 上正確顯示，但 Agent 仍坐在座位上。
+- ✅ Phase 2：座位上的部分，包括 idle / thinking / working / blocked 的姿勢、螢幕內容、名牌與警示光圈。可從 Agent Panel 的 Status preview 手動觸發。
+- ✅ Phase 3：所有狀態都由 runtime 依真實任務進度發出。
+- ✅ Phase 4：meeting / reporting / break 會走到對應地點；起身、走路、坐下有動畫，名牌與 Follow 鏡頭跟著移動。
 
 ## 7. 績效與 Coins
 

@@ -1,35 +1,22 @@
 import type { Agent } from '@office/shared'
-import { useFrame, useThree } from '@react-three/fiber'
-import { useMemo } from 'react'
+import { addAfterEffect, useThree } from '@react-three/fiber'
+import { useEffect } from 'react'
 import * as THREE from 'three'
 import { CAT_ID, useOfficeStore, type FloatEffect } from '../store/officeStore'
 import { CAT_ACTIVITY, CAT_COLOR, CAT_NAME } from '../world/cat/catInfo'
 import { CoinIcon, PawIcon } from '../ui/icons'
+import { getAnchor } from './anchors'
 import { DEPT_COLOR, STATUS_META } from './status'
 
 /**
  * Name tags and floating effects live in one plain DOM layer (rendered by the HUD),
- * not in separate drei <Html> roots. 3D objects register an anchor, the HUD registers
- * DOM elements, and <TagProjector> moves each element to its anchor every frame.
+ * not in separate drei <Html> roots. 3D objects register an anchor (anchors.ts), the
+ * HUD registers DOM elements, and <TagProjector> moves each element to its anchor every frame.
  */
-const anchors = new Map<string, THREE.Object3D>()
 const tagElements = new Map<string, HTMLDivElement>()
 const effectElements = new Map<HTMLDivElement, string>()
 /** Opaque walls that hide tags behind them (glass does not). */
 const occluders: THREE.Object3D[] = []
-
-export const registerTagAnchor = (id: string, obj: THREE.Object3D | null) => {
-  if (obj) anchors.set(id, obj)
-  else anchors.delete(id)
-}
-
-/** World position of a registered anchor (agents, the cat). Used by the camera follow mode. */
-export const getAnchorPosition = (id: string, out: THREE.Vector3) => {
-  const anchor = anchors.get(id)
-  if (!anchor) return false
-  anchor.getWorldPosition(out)
-  return true
-}
 
 export const registerOccluder = (obj: THREE.Object3D) => {
   occluders.push(obj)
@@ -46,48 +33,56 @@ const registerTag = (id: string) => (el: HTMLDivElement | null) => {
 /** Distance thresholds for the label level-of-detail. */
 const LOD = { near: 16, far: 75 }
 
+/**
+ * Projects after each frame has rendered, so tags use exactly the camera and avatar
+ * positions on screen (a plain useFrame would run before the camera rig and lag a frame).
+ */
 export function TagProjector() {
-  const size = useThree((s) => s.size)
-  const v = useMemo(() => new THREE.Vector3(), [])
-  const dir = useMemo(() => new THREE.Vector3(), [])
-  const ray = useMemo(() => new THREE.Raycaster(), [])
+  const get = useThree((s) => s.get)
 
-  useFrame(({ camera }) => {
-    const { hoveredId, selectedId } = useOfficeStore.getState()
+  useEffect(() => {
+    const v = new THREE.Vector3()
+    const dir = new THREE.Vector3()
+    const ray = new THREE.Raycaster()
 
-    /** Projects an anchor; returns distance, or -1 when off-screen / behind a wall. */
-    const project = (id: string) => {
-      const anchor = anchors.get(id)
-      if (!anchor) return -1
-      anchor.getWorldPosition(v)
-      const dist = camera.position.distanceTo(v)
-      ray.set(camera.position, dir.subVectors(v, camera.position).normalize())
-      ray.far = dist
-      if (ray.intersectObjects(occluders, false).length > 0) return -1
-      v.project(camera)
-      if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) return -1
-      return dist
-    }
-    const place = (el: HTMLElement, z: number) => {
-      const x = ((v.x + 1) / 2) * size.width
-      const y = ((1 - v.y) / 2) * size.height
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`
-      el.style.zIndex = String(z)
-    }
+    return addAfterEffect(() => {
+      const { camera, size } = get()
+      const { hoveredId, selectedId } = useOfficeStore.getState()
 
-    for (const [id, el] of tagElements) {
-      const dist = project(id)
-      const focus = id === hoveredId || id === selectedId
-      const lod = dist < 0 ? 'hidden' : focus || dist < LOD.near ? 'near' : dist < LOD.far ? 'far' : 'hidden'
-      if (el.dataset.lod !== lod) el.dataset.lod = lod
-      if (lod !== 'hidden') place(el, focus ? 1000 : 900 - Math.round(dist))
-    }
-    for (const [el, anchorId] of effectElements) {
-      const dist = project(anchorId)
-      el.style.display = dist < 0 ? 'none' : ''
-      if (dist >= 0) place(el, 1100)
-    }
-  })
+      /** Projects an anchor; returns distance, or -1 when off-screen / behind a wall. */
+      const project = (id: string) => {
+        const anchor = getAnchor(id)
+        if (!anchor) return -1
+        anchor.getWorldPosition(v)
+        const dist = camera.position.distanceTo(v)
+        ray.set(camera.position, dir.subVectors(v, camera.position).normalize())
+        ray.far = dist
+        if (ray.intersectObjects(occluders, false).length) return -1
+        v.project(camera)
+        if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) return -1
+        return dist
+      }
+      const place = (el: HTMLElement, z: number) => {
+        const x = ((v.x + 1) / 2) * size.width
+        const y = ((1 - v.y) / 2) * size.height
+        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`
+        el.style.zIndex = String(z)
+      }
+
+      for (const [id, el] of tagElements) {
+        const dist = project(id)
+        const focus = id === hoveredId || id === selectedId
+        const lod = dist < 0 ? 'hidden' : focus || dist < LOD.near ? 'near' : dist < LOD.far ? 'far' : 'hidden'
+        if (el.dataset.lod !== lod) el.dataset.lod = lod
+        if (lod !== 'hidden') place(el, focus ? 1000 : 900 - Math.round(dist))
+      }
+      for (const [el, anchorId] of effectElements) {
+        const dist = project(anchorId)
+        el.style.display = dist < 0 ? 'none' : ''
+        if (dist >= 0) place(el, 1100)
+      }
+    })
+  }, [get])
   return null
 }
 

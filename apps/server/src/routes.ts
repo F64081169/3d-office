@@ -7,18 +7,18 @@ const STATUSES: AgentStatus[] = ['idle', 'thinking', 'working', 'meeting', 'repo
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'critical']
 const MAX_TEXT = 2000
 
-type Ctx = { company: Company; runtime: AgentRuntime; provider: string }
+type Ctx = { company: Company; runtime: AgentRuntime; provider: string; speed: number }
 
 const bad = (reply: FastifyReply, message: string, code = 400) => reply.code(code).send({ error: message })
 const text = (v: unknown, max = MAX_TEXT) => (typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : null)
 
-export function registerRoutes(app: FastifyInstance, { company, runtime, provider }: Ctx) {
+export function registerRoutes(app: FastifyInstance, { company, runtime, provider, speed }: Ctx) {
   const agentExists = (id: string) => company.state.agents.some((a) => a.id === id)
 
   app.get('/api/health', async () => ({ ok: true, provider, seq: company.seq }))
 
   /** Snapshot: the client loads this, then streams events after `seq`. */
-  app.get('/api/state', async () => ({ seq: company.seq, provider, state: company.state }))
+  app.get('/api/state', async () => ({ seq: company.seq, provider, speed, state: company.state }))
 
   /** Server-sent events. Reconnects resume from Last-Event-ID; gaps trigger a resync. */
   app.get('/api/events', (req, reply) => {

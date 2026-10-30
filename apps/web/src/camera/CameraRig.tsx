@@ -2,7 +2,7 @@ import { OrbitControls } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, type ComponentRef } from 'react'
 import * as THREE from 'three'
-import { getAnchorPosition } from '../agents/tags'
+import { getAnchorPosition } from '../agents/anchors'
 import { useOfficeStore } from '../store/officeStore'
 import { INTRO_START, OVERVIEW } from '../world/layout'
 
@@ -55,6 +55,8 @@ export function CameraRig() {
 
   useEffect(() => {
     if (!shot || !controls.current) return
+    // A shot requested during the fly-in (e.g. clicking an agent) ends the intro too.
+    if (flight.current?.intro) finishIntro()
     flight.current = {
       fromPos: camera.position.clone(),
       toPos: new THREE.Vector3(...shot.position),
@@ -64,13 +66,14 @@ export function CameraRig() {
       duration: 1.5,
       intro: false,
     }
-  }, [shot, camera, clock])
+  }, [shot, camera, clock, finishIntro])
 
   // Start following: fly to a close 3/4 shot of the subject; the follow loop then keeps it centred.
   useEffect(() => {
     const c = controls.current
     const p = new THREE.Vector3()
     if (!followId || !c || !getAnchorPosition(followId, p)) return
+    if (flight.current?.intro) finishIntro()
     flight.current = {
       fromPos: camera.position.clone(),
       toPos: p.clone().add(new THREE.Vector3(2.4, 1.6, 2.8)),
@@ -80,7 +83,7 @@ export function CameraRig() {
       duration: 1.4,
       intro: false,
     }
-  }, [followId, camera, clock])
+  }, [followId, camera, clock, finishIntro])
 
   // Any manual orbit/zoom ends (or skips) the current flight.
   useEffect(() => {

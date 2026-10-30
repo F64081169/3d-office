@@ -132,7 +132,7 @@ export function Workspace() {
       {/* Planted divider between the two pods */}
       <Bookshelf width={2.4} height={1.05} seed={3} position={[-2.8, 0, 0.2]} rotation-y={Math.PI / 2} />
       <Plant variant="small" pot="charcoal" position={[-2.8, 1.05, -0.6]} />
-      <Plant variant="olive" pot="stone" position={[-2.8, 0, -2.3]} />
+      <Plant variant="olive" pot="stone" position={[-2.8, 0, -3.0]} />
       <Plant variant="fiddle" pot="white" position={[-2.8, 0, 2.6]} rotation-y={1.2} />
       <Plant variant="bush" pot="terracotta" position={[-14.6, 0, 3.6]} />
       <Plant variant="snake" pot="charcoal" position={[8.6, 0, 3.6]} />

@@ -56,7 +56,7 @@ function Brand() {
         <div className="brand__title">Claude Office</div>
         <div className="brand__subtitle">AI Agent Company Simulator</div>
       </div>
-      <span className="chip">MVP · Phase 3</span>
+      <span className="chip">MVP · Phase 4</span>
     </header>
   )
 }

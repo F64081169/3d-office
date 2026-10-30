@@ -28,9 +28,10 @@ const runtime = new AgentRuntime({ engine, provider, getState: company.getState,
 company.subscribe((e) => db.persist(e, company.state))
 company.subscribe((e) => runtime.handleEvent(e.event))
 runtime.resume()
+if (config.ambient) runtime.startAmbient()
 
 // 3. HTTP: API + event stream, plus the built web app when present (npm run build).
-registerRoutes(app, { company, runtime, provider: provider.name })
+registerRoutes(app, { company, runtime, provider: provider.name, speed: config.speed })
 const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist')
 if (config.serveWeb && existsSync(webDist)) {
   await app.register(fastifyStatic, { root: webDist })

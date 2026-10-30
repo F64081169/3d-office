@@ -50,11 +50,16 @@
 - [x] `npm test`：記憶體內以 40 倍速跑完整 Demo 並驗證委派順序、狀態序列、結果
 - [x] 驗證過：完整 Demo 在瀏覽器中跑完（約 100 個事件）；在專案進行中 `kill -9` server 後重啟能接手完成
 
-### Phase 4 — Movement
+### Phase 4 — Movement ✅
 
 - [x] ~~Event Bus（server）+ SSE → 前端 `applyEvent`~~（Phase 3 已完成）
-- [ ] Status → 目的地 / 姿勢對照（見 agent-flow.md §6）
-- [ ] Waypoint 路徑 + lerp 走路動畫（坐 ↔ 站 ↔ 走）：沿用 Phase 2 的 `navigation.ts`，補上會議室 / 主管桌 / 休息區的目的地
+- [x] Status → 目的地 / 姿勢對照（見 agent-flow.md §6）：會議室固定座位、主管桌前 / Director Office 訪客椅、Lounge / Coffee Bar / 窗邊
+- [x] Shared world model（`packages/shared/src/world.ts`）：導航圖從 web 移到 shared，前端畫走路、runtime 算抵達時間用同一份資料
+- [x] Waypoint 路徑 + lerp 走路動畫（起身 → 走 → 轉向 → 坐下 / 站定），中途改目的地會沿原路退回；不瞬移
+- [x] Runtime 依抵達時間排程：kickoff meeting 等全員入座、回報等走到主管面前
+- [x] Break：完成任務後、閒置時隨機去休息（Lounge 沙發、Coffee Bar 拿咖啡）
+- [x] 名牌、Follow 鏡頭、點擊聚焦跟著即時位置；名牌改在渲染後投影，不再落後一幀
+- [x] 測試：路徑不碰家具、影響時間軸的走路時間上限、座位不重複
 - [x] ~~螢幕內容隨 status 變化（idle / code / docs / error）~~（Phase 2–3 已完成）
 
 ### Phase 5 — Performance · Coins · Dashboard
@@ -79,7 +84,8 @@
 
 - Phase 1 完成步驟 1–5。
 - Phase 2 加上點擊 Agent 查看資料，以及狀態在 3D 中的呈現。
-- Phase 3 完成步驟 6–9、12、14–17、19–20、23：對話、建立專案、拆解、執行、回報、Project Completed 通知。目前狀態與名牌都正確，但 Agent 還不會走動（步驟 10–11、13、18 是 Phase 4）。
+- Phase 3 完成步驟 6–9、12、14–17、19–20、23：對話、建立專案、拆解、執行、回報、Project Completed 通知。
+- Phase 4 完成步驟 10–11、13、16–18 的 3D 部分：Director 與 Managers 走進會議室、會後走回座位、Employees 走到主管桌前回報、Managers 走進 Director Office 回報、Director 回到辦公桌。
 - 步驟 21–22（自動發 Coins、更新 Performance）是 Phase 5。
 
 ## 不做（延後）

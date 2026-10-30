@@ -2,10 +2,11 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { blobShadowTexture } from '../../assets/textures'
-import { registerTagAnchor } from '../../agents/tags'
+import { registerTagAnchor } from '../../agents/anchors'
 import { CAT_ID, useOfficeStore, type CatActivity } from '../../store/officeStore'
 import { mulberry32 } from '../../util/random'
-import { NAV_NODES, route, SPOTS, type Spot, type SpotKind } from '../navigation'
+import { routeBetween } from '@office/shared'
+import { CAT_SPOTS, type CatSpot, type SpotKind } from './catSpots'
 import { CAT_COLOR } from './catInfo'
 
 const SCALE = 1.3
@@ -61,27 +62,15 @@ const LOAF: Pose = { pelvisY: 0.1, spinePitch: 0, frontLeg: -1.5, backLeg: 1.5, 
 const ACTIVITY: Record<SpotKind, CatActivity> = { nap: 'napping', watch: 'watching', beg: 'begging', visit: 'visiting' }
 const STAY_SECONDS: Record<SpotKind, [number, number]> = { nap: [14, 24], watch: [8, 14], beg: [6, 9], visit: [6, 10] }
 
-const v3 = ([x, z]: [number, number], y = 0) => new THREE.Vector3(x, y, z)
-const near = (a: THREE.Vector3, b: THREE.Vector3) => a.distanceToSquared(b) < 0.01
-
-/** Spot A → spot B: back out along A's spur, corridor route, then into B's spur. */
-function buildPath(from: Spot, to: Spot, start: THREE.Vector3) {
-  const pts = [start.clone()]
-  for (const p of [...from.via].reverse()) pts.push(v3(p))
-  for (const n of route(from.node, to.node)) pts.push(v3(NAV_NODES[n]))
-  for (const p of to.via) pts.push(v3(p))
-  pts.push(new THREE.Vector3(...to.position))
-  // Drop duplicates and immediate back-tracks (A → B → A) where two spurs share a stem.
-  for (let i = 1; i < pts.length; i++) {
-    if (near(pts[i], pts[i - 1])) {
-      pts.splice(i--, 1)
-    } else if (i + 1 < pts.length && near(pts[i - 1], pts[i + 1])) {
-      pts.splice(i, 2)
-      i = Math.max(0, i - 2)
-    }
-  }
-  return pts
+/** Spot A → spot B along the shared walkable graph; only the ends leave the floor (sofa). */
+function buildPath(from: CatSpot, to: CatSpot, start: THREE.Vector3) {
+  const route = routeBetween(from, to)
+  return route.map(([x, z], i) =>
+    i === 0 ? start.clone() : new THREE.Vector3(x, i === route.length - 1 ? (to.height ?? 0) : 0, z),
+  )
 }
+
+const spotPosition = (s: CatSpot) => new THREE.Vector3(s.position[0], s.height ?? 0, s.position[1])
 
 const lerpAngle = (a: number, b: number, k: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k
 
@@ -91,7 +80,7 @@ const lerpAngle = (a: number, b: number, k: number) => a + Math.atan2(Math.sin(b
  */
 export function OfficeCat() {
   const rnd = useMemo(() => mulberry32(2024), [])
-  const start = SPOTS.find((s) => s.id === 'reception')!
+  const start = CAT_SPOTS.find((s) => s.id === 'reception')!
   const sim = useRef({
     mode: 'stay' as 'stay' | 'walk',
     spot: start,
@@ -99,9 +88,9 @@ export function OfficeCat() {
     seg: 0,
     segT: 0,
     until: 3,
-    pos: new THREE.Vector3(...start.position),
-    yaw: start.rotationY ?? 0,
-    targetYaw: start.rotationY ?? 0,
+    pos: spotPosition(start),
+    yaw: start.rotationY,
+    targetYaw: start.rotationY,
     walkPhase: 0,
     pets: 0,
     purrUntil: 0,
@@ -136,7 +125,7 @@ export function OfficeCat() {
     }
 
     if (s.mode === 'stay' && now > s.until && !s.purrUntil) {
-      const options = SPOTS.filter((o) => o.id !== s.spot.id)
+      const options = CAT_SPOTS.filter((o) => o.id !== s.spot.id)
       let r = rnd() * options.reduce((sum, o) => sum + o.weight, 0)
       const next = options.find((o) => (r -= o.weight) <= 0) ?? options[0]
       s.path = buildPath(s.spot, next, s.pos)
@@ -175,11 +164,10 @@ export function OfficeCat() {
           if (s.seg >= s.path.length - 1) {
             const spot = s.spot
             s.mode = 'stay'
-            s.pos.set(...spot.position)
+            s.pos.copy(spotPosition(spot))
             const [lo, hi] = STAY_SECONDS[spot.kind]
             s.until = now + lo + rnd() * (hi - lo)
-            s.targetYaw =
-              spot.rotationY ?? Math.atan2(spot.lookAt![0] - spot.position[0], spot.lookAt![1] - spot.position[2])
+            s.targetYaw = spot.rotationY
             store.setCat({ activity: ACTIVITY[spot.kind], place: spot.label })
           }
         }

@@ -1,12 +1,13 @@
-import { HOME_SEATS, type Agent, type AgentStatus } from '@office/shared'
+import { placeFor, type Agent, type AgentStatus } from '@office/shared'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { blobShadowTexture } from '../assets/textures'
 import { useOfficeStore } from '../store/officeStore'
+import { registerTagAnchor } from './anchors'
 import { APPEARANCE, DEFAULT_APPEARANCE } from './appearance'
+import { AgentMotion } from './motion'
 import { DEPT_COLOR, STATUS_META } from './status'
-import { registerTagAnchor } from './tags'
 
 /** Shared low-poly body parts (~1.8k triangles per avatar). */
 const G = {
@@ -23,6 +24,7 @@ const G = {
   bun: new THREE.SphereGeometry(0.075, 12, 10),
   eye: new THREE.SphereGeometry(0.021, 8, 6),
   lens: new THREE.TorusGeometry(0.038, 0.007, 6, 18),
+  cup: new THREE.CylinderGeometry(0.04, 0.034, 0.09, 14),
   ring: new THREE.RingGeometry(0.46, 0.54, 48),
   alert: new THREE.RingGeometry(0.6, 0.72, 48),
   blob: new THREE.PlaneGeometry(1, 1),
@@ -30,38 +32,53 @@ const G = {
 
 const eyeMat = new THREE.MeshStandardMaterial({ color: '#1d1d1f', roughness: 0.3 })
 const lensMat = new THREE.MeshStandardMaterial({ color: '#202124', metalness: 0.6, roughness: 0.3 })
+const cupMat = new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.25 })
 const blobMat = new THREE.MeshBasicMaterial({ map: blobShadowTexture(), transparent: true, depthWrite: false })
 
-/** Rig constants (metres). Hip pivot height: standing vs seated on a 0.49m chair. */
+/** Hip pivot height standing vs seated on a 0.49m chair. */
 const HIP = { stand: 0.86, sit: 0.5 }
 const CHEER_MS = 1600
 
-/** Seated upper-body pose per status: [left arm pitch, left arm roll, right pitch, right roll, head pitch]. */
-const SEATED_POSE: Record<AgentStatus, [number, number, number, number, number]> = {
+/** Upper body: [left arm pitch, left arm roll, right arm pitch, right arm roll, head pitch]. */
+type Upper = [number, number, number, number, number]
+
+const AT_DESK: Record<AgentStatus, Upper> = {
   idle: [-0.5, 0.08, -0.5, 0.08, 0],
   thinking: [-0.45, 0.08, -2.35, -0.55, 0.12],
   working: [-1.05, -0.12, -1.05, -0.12, 0.18],
   blocked: [-2.75, -0.35, -2.75, -0.35, -0.08],
-  // meeting / reporting / break move the agent elsewhere in Phase 4; until then they stay seated.
-  meeting: [-0.5, 0.08, -0.5, 0.08, 0],
-  reporting: [-0.5, 0.08, -0.5, 0.08, 0],
-  break: [-0.35, 0.15, -0.35, 0.15, -0.05],
+  meeting: [-0.9, -0.1, -0.9, -0.1, 0.05],
+  reporting: [-0.6, 0.05, -0.6, 0.05, 0],
+  break: [-0.25, 0.25, -0.25, 0.25, -0.12],
 }
-const CHEER_POSE: [number, number, number, number, number] = [-2.95, 0.35, -2.95, 0.35, -0.15]
+const CHEER: Upper = [-2.95, 0.35, -2.95, 0.35, -0.15]
+const STANDING: Upper = [0.05, 0.08, 0.05, 0.08, 0]
 
-type Pose = 'sit' | 'stand'
+/**
+ * What the arms and head do, given where the agent is and what it is doing.
+ * Talking = a periodic gesture with the right arm.
+ */
+function upperBody(status: AgentStatus, standing: boolean, t: number): Upper {
+  const talking = Math.sin(t * 0.8) > -0.2
+  const gesture = talking ? -0.35 + Math.sin(t * 2.6) * 0.3 : 0
+  if (standing) {
+    if (status === 'reporting') return [0.05, 0.08, -0.85 + gesture, -0.2, 0]
+    // Coffee in hand, sipping now and then (a window break just looks out).
+    if (status === 'break') return [0.05, 0.1, -1.95 + (Math.sin(t * 0.6) > 0.75 ? -0.35 : 0), -0.55, -0.05]
+    return STANDING
+  }
+  if (status === 'meeting' || status === 'reporting') return [-0.9, -0.1, -1.0 + gesture, -0.15, 0.05]
+  return AT_DESK[status]
+}
 
 export function AgentAvatar({ agent }: { agent: Agent }) {
   const look = APPEARANCE[agent.id] ?? DEFAULT_APPEARANCE
-  const seat = HOME_SEATS[agent.id]
   const hovered = useOfficeStore((s) => s.hoveredId === agent.id)
   const selected = useOfficeStore((s) => s.selectedId === agent.id)
   const setHovered = useOfficeStore((s) => s.setHovered)
   const focusAgent = useOfficeStore((s) => s.focusAgent)
-
-  // Phase 2: everyone stays at their desk. Phase 4 derives pose + destination from status.
-  const pose: Pose = 'sit'
   const dept = DEPT_COLOR[agent.department]
+  const status = agent.status
 
   const mats = useMemo(
     () => ({
@@ -82,40 +99,75 @@ export function AgentAvatar({ agent }: { agent: Agent }) {
     [look, dept],
   )
 
+  // Motion: start wherever the current status puts this agent (no walk on first load).
+  const motion = useMemo(
+    () => new AgentMotion(placeFor(agent, agent.status, useOfficeStore.getState().agents)),
+    [agent.id], // one simulator per agent for its whole life
+  )
+  useEffect(() => {
+    motion.goTo(placeFor(agent, status, useOfficeStore.getState().agents))
+  }, [motion, agent, status])
+
+  const root = useRef<THREE.Group>(null!)
   const body = useRef<THREE.Group>(null!)
   const torso = useRef<THREE.Group>(null!)
   const head = useRef<THREE.Group>(null!)
   const armL = useRef<THREE.Group>(null!)
   const armR = useRef<THREE.Group>(null!)
+  const thighs = useRef<THREE.Group[]>([])
+  const knees = useRef<THREE.Group[]>([])
+  const cup = useRef<THREE.Mesh>(null!)
+  const blob = useRef<THREE.Mesh>(null!)
+  const anchor = useRef<THREE.Group>(null!)
   const ringMesh = useRef<THREE.Mesh>(null!)
   const alertMesh = useRef<THREE.Mesh>(null!)
   const phase = useMemo(() => (agent.id.charCodeAt(0) * 7 + agent.id.length * 13) % 100, [agent.id])
 
-  const sitting = pose === 'sit'
-  const hipY = sitting ? HIP.sit : HIP.stand
-  const status = agent.status
-
-  useFrame(({ clock }, dt) => {
+  useFrame(({ clock }, rawDt) => {
+    // Motion follows real time exactly, however slow the frame: the server schedules
+    // meetings and reports around these arrival times.
+    motion.update(Math.max(0, rawDt), useOfficeStore.getState().simSpeed)
+    const dt = Math.min(rawDt, 0.1)
     const t = clock.elapsedTime + phase
     const k = 1 - Math.exp(-dt * 8)
+    const walking = motion.phase === 'walking'
+    const sit = motion.sit
+    const standing = sit < 0.5
+
+    root.current.position.set(motion.x, 0, motion.z)
+    root.current.rotation.y = motion.yaw
+
+    // Legs: seated fold, or a walk cycle driven by distance travelled.
+    const cycle = motion.stride * 4.2
+    for (let i = 0; i < 2; i++) {
+      const swing = walking ? Math.sin(cycle + i * Math.PI) * 0.55 : 0
+      thighs.current[i].rotation.x = -Math.PI / 2 * sit + swing
+      knees.current[i].rotation.x = (Math.PI / 2) * sit + (walking ? Math.max(0, -Math.sin(cycle + i * Math.PI)) * 0.7 : 0)
+    }
+
     const rewardedAt = useOfficeStore.getState().lastRewardAt[agent.id] ?? -Infinity
     const cheering = performance.now() - rewardedAt < CHEER_MS
-    const [lp, lr, rp, rr, hp] = cheering ? CHEER_POSE : SEATED_POSE[status]
-
-    // Blend toward the status pose, then layer small motions on top.
-    const typing = status === 'working' && !cheering
-    armL.current.rotation.x += (lp + (typing ? Math.sin(t * 17) * 0.07 : Math.sin(t * 0.8) * 0.03) - armL.current.rotation.x) * k
-    armR.current.rotation.x += (rp + (typing ? Math.sin(t * 17 + 1.6) * 0.07 : Math.sin(t * 0.8 + 1) * 0.03) - armR.current.rotation.x) * k
+    const [lp, lr, rp, rr, hp] = cheering ? CHEER : walking ? STANDING : upperBody(status, standing, t)
+    const typing = status === 'working' && !standing && !walking && !cheering
+    const armSwing = walking ? Math.sin(cycle) * 0.45 : 0
+    armL.current.rotation.x += (lp - armSwing + (typing ? Math.sin(t * 17) * 0.07 : Math.sin(t * 0.8) * 0.03) - armL.current.rotation.x) * k
+    armR.current.rotation.x += (rp + armSwing + (typing ? Math.sin(t * 17 + 1.6) * 0.07 : Math.sin(t * 0.8 + 1) * 0.03) - armR.current.rotation.x) * k
     armL.current.rotation.z += (-lr - armL.current.rotation.z) * k
     armR.current.rotation.z += (rr - armR.current.rotation.z) * k
+    cup.current.visible = status === 'break' && standing && !walking && motion.phase === 'settled'
 
-    const glance = status === 'idle' || status === 'break' ? Math.sin(t * 0.37) * 0.45 * Math.max(0, Math.sin(t * 0.11)) : 0
-    const shake = status === 'blocked' ? Math.sin(t * 2.2) * 0.3 : 0
+    const atRest = !walking && (status === 'idle' || status === 'break')
+    const glance = atRest ? Math.sin(t * 0.37) * 0.45 * Math.max(0, Math.sin(t * 0.11)) : 0
+    const shake = status === 'blocked' && !walking ? Math.sin(t * 2.2) * 0.3 : 0
     head.current.rotation.y += (glance + shake - head.current.rotation.y) * k
     head.current.rotation.x += (hp + Math.sin(t * (status === 'thinking' ? 0.9 : 0.53)) * 0.05 - head.current.rotation.x) * k
 
+    const hipY = HIP.stand + (HIP.sit - HIP.stand) * sit
+    const bob = walking ? Math.abs(Math.sin(cycle)) * 0.035 : 0
     torso.current.scale.y = 1 + Math.sin(t * 1.7) * 0.012
-    body.current.position.y = hipY + (cheering ? Math.abs(Math.sin(t * 9)) * 0.06 : 0)
+    body.current.position.y = hipY + bob + (cheering ? Math.abs(Math.sin(t * 9)) * 0.06 : 0)
+    anchor.current.position.y = hipY + 1.12
+    blob.current.scale.setScalar(0.8 + 0.2 * sit)
 
     const ring = mats.ring
     ring.opacity += ((selected ? 0.95 : hovered ? 0.6 : 0) - ring.opacity) * 0.2
@@ -142,22 +194,16 @@ export function AgentAvatar({ agent }: { agent: Agent }) {
   }
 
   return (
-    <group
-      position={[agent.position.x, agent.position.y, agent.position.z]}
-      rotation-y={seat?.rotationY ?? 0}
-      onPointerOver={onOver}
-      onPointerOut={onOut}
-      onClick={onClick}
-    >
-      <mesh geometry={G.blob} material={blobMat} rotation-x={-Math.PI / 2} position-y={0.012} scale={sitting ? 1.0 : 0.8} />
+    <group ref={root} onPointerOver={onOver} onPointerOut={onOut} onClick={onClick}>
+      <mesh ref={blob} geometry={G.blob} material={blobMat} rotation-x={-Math.PI / 2} position-y={0.012} />
       <mesh ref={ringMesh} geometry={G.ring} material={mats.ring} rotation-x={-Math.PI / 2} position-y={0.02} />
       <mesh ref={alertMesh} geometry={G.alert} material={mats.alert} rotation-x={-Math.PI / 2} position-y={0.022} />
 
-      <group ref={body} position-y={hipY}>
-        {[-1, 1].map((s) => (
-          <group key={s} position={[s * 0.095, 0, 0]} rotation-x={sitting ? -Math.PI / 2 : 0}>
+      <group ref={body}>
+        {[-1, 1].map((s, i) => (
+          <group key={s} ref={(g) => void (g && (thighs.current[i] = g))} position={[s * 0.095, 0, 0]}>
             <mesh geometry={G.thigh} material={mats.bottom} position-y={-0.2} />
-            <group position-y={-0.4} rotation-x={sitting ? Math.PI / 2 : 0}>
+            <group ref={(g) => void (g && (knees.current[i] = g))} position-y={-0.4}>
               <mesh geometry={G.shin} material={mats.bottom} position-y={-0.2} />
               <mesh geometry={G.shoe} material={mats.shoes} position={[0, -0.42, 0.04]} />
             </group>
@@ -175,6 +221,7 @@ export function AgentAvatar({ agent }: { agent: Agent }) {
             <group key={s} ref={ref} position={[s * 0.235, 0.52, 0]} rotation-z={s * 0.08}>
               <mesh geometry={G.arm} material={mats.top} position-y={-0.2} />
               <mesh geometry={G.hand} material={mats.skin} position-y={-0.45} />
+              {s === 1 && <mesh ref={cup} geometry={G.cup} material={cupMat} position={[0, -0.47, 0.06]} visible={false} />}
             </group>
           ))}
         </group>
@@ -192,7 +239,12 @@ export function AgentAvatar({ agent }: { agent: Agent }) {
         </group>
       </group>
 
-      <group ref={(o) => registerTagAnchor(agent.id, o)} position-y={hipY + 1.12} />
+      <group
+        ref={(o) => {
+          anchor.current = o!
+          registerTagAnchor(agent.id, o)
+        }}
+      />
     </group>
   )
 }

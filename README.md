@@ -13,8 +13,8 @@
 | 1 | Project setup · 3D scene · Office layout · Static agents | ✅ 完成 |
 | 2 | Agent data · Click UI · Status UI（＋辦公室貓 Mochi） | ✅ 完成 |
 | 3 | Task engine · Director delegation · Mock Agent Provider（＋Event stream、SQLite） | ✅ 完成 |
-| 4 | Movement（Event system 已在 Phase 3 完成） | ⏭️ 下一步 |
-| 5 | Performance · Coins · Dashboard | 🔜 |
+| 4 | Movement（Event system 已在 Phase 3 完成） | ✅ 完成 |
+| 5 | Performance · Coins · Dashboard | ⏭️ 下一步 |
 | 6 | Polish · Premium office · Lighting · Camera | 🔜 |
 
 詳細清單見 [docs/mvp.md](docs/mvp.md)。
@@ -44,7 +44,7 @@ npm run dev
 
 > Analyze random write performance bottleneck and propose improvements.
 
-約 40 秒後 Director 會交回最終報告。想看快一點：
+約 2 分鐘後 Director 會交回最終報告（包含大家走去開會、回報的時間）。想看快一點：
 
 ```bash
 SIM_SPEED=2 npm run dev
@@ -53,7 +53,7 @@ SIM_SPEED=2 npm run dev
 其他指令：
 
 ```bash
-npm test            # 在記憶體中以 40 倍速跑完整 Demo 流程（agent runtime）
+npm test            # 以 40 倍速跑完整 Demo 流程（agent runtime）＋ 路徑不碰家具檢查（shared world model）
 ```
 
 ```bash
@@ -64,7 +64,7 @@ npm run typecheck   # 全部 workspace 型別檢查
 npm run build && npm start   # production：單一 port http://localhost:8787 同時提供 API 與前端
 ```
 
-環境變數（全部可選）：`SIM_SPEED`（模擬倍速）、`LLM_PROVIDER`（目前只有 `mock`）、`MOCK_BLOCK_RATE`、`PORT`、`DATABASE_URL`，說明見 [architecture.md §4](docs/architecture.md)。
+環境變數（全部可選）：`SIM_SPEED`（模擬倍速）、`AMBIENT=0`（關閉閒置 Agent 自動去休息）、`LLM_PROVIDER`（目前只有 `mock`）、`MOCK_BLOCK_RATE`、`PORT`、`DATABASE_URL`，說明見 [architecture.md §4](docs/architecture.md)。
 
 ## 操作
 
@@ -87,7 +87,33 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
 
 右下 `?` 裡也有 **Reset company**：清空所有專案、任務與聊天，回到初始狀態。
 
-開發用：網址加上 `?nav`（例如 http://localhost:5173/?nav）會畫出走道導航圖（青色）與目的地支線（粉紅）。
+開發用：網址加上 `?nav`（例如 http://localhost:5173/?nav）會畫出走道導航圖（青色）、Agent 目的地支線（琥珀色）與貓的目的地（粉紅）。
+
+## Phase 4 內容：走動
+
+![Kickoff meeting](docs/images/kickoff-meeting.jpg)
+
+Agent 的狀態現在對應到實際位置。他們會起身、沿走道走過去，再坐下或站定，不會瞬移：
+
+| Status | 走去哪裡 |
+| --- | --- |
+| Meeting | 會議室的固定座位。Aria 坐大螢幕前的主位，工程團隊與研究團隊分坐兩側 |
+| Reporting | Employee 走到主管桌前排成一排；Manager 走進 Director Office 坐訪客椅；Aria 站在自己辦公桌旁對你報告 |
+| Break | Employees 坐 Lounge 沙發；Managers 到 Coffee Bar 拿咖啡；Aria 站在辦公室窗邊看風景 |
+| Idle / Thinking / Working / Blocked | 自己的座位 |
+
+- **畫面與流程同步**：server 用和前端相同的路徑資料（`packages/shared/src/world.ts`）算出每個人何時走到。
+  - Kickoff meeting 等 Director 與 Managers 全部入座後才開始。
+  - 回報等人走到主管面前才開始。
+- **辦公室有生活感**：完成任務的 Employee 約一半會去休息；沒事做的人也會不時去 Lounge / Coffee Bar，休息 14–24 秒後回座。被指派工作時會立刻走回座位。
+- **走到一半改目的地**：沿原路退回走道再改道，不穿牆、不穿家具（`npm test` 會檢查所有路徑）。
+- 名牌、Follow 鏡頭、點擊 Agent 聚焦都會跟著他走。
+- 打開頁面時，每個人直接出現在目前狀態的位置，例如正在開會的人一開始就坐在會議室。
+
+| | |
+| --- | --- |
+| ![Reporting to the manager](docs/images/reporting.jpg) | ![Manager reports to the Director](docs/images/manager-report.jpg) |
+| ![Break in the lounge](docs/images/break.jpg) | ![Office overview while working](docs/images/walking.jpg) |
 
 ## Phase 3 內容：Director 委派
 
@@ -149,7 +175,7 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
   | Thinking | 手托下巴，螢幕切成文件 |
   | Working | 打字動畫，工程師螢幕顯示 code、研究員顯示文件 |
   | Blocked | 抱頭、地上紅色警示光圈閃爍、名牌變紅、螢幕顯示 BLOCKED |
-  | Meeting / Reporting / Break | Phase 4 才會移動到會議室 / 主管桌 / 休息區；目前名牌與 Panel 會更新 |
+  | Meeting / Reporting / Break | 走到會議室 / 主管桌前 / 休息區（Phase 4） |
 
 - **Status preview**（開發用）：Panel 底部可手動切換狀態，送出和 Task Engine 相同的 `AGENT_STATUS_CHANGED` 事件，用來檢查每種狀態的樣子。
 
@@ -167,7 +193,7 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
 - 點擊 Mochi 打開資訊卡，顯示目前在做什麼、在哪裡。
   - **Pet**：Mochi 會發出呼嚕聲、尾巴快速擺動。
   - **Follow**：鏡頭跟著 Mochi 走，期間仍可以旋轉與縮放；按 WASD、`Esc` 或選擇任一視角就會停止跟隨。
-- 這套導航圖（`apps/web/src/world/navigation.ts`）也是 Phase 4 Agent 走動要用的基礎。
+- 這套導航圖在 Phase 4 移到 `packages/shared/src/world.ts`，Agent 走動與 server 計時都用它。
 
 ## Phase 1 內容
 
@@ -209,8 +235,8 @@ Owner (You)
 ├─ apps/
 │  ├─ web/                    ✅ React + Vite + React Three Fiber
 │  │  └─ src/
-│  │     ├─ world/            辦公室場景：layout、building、rooms、lighting、exterior、navigation、cat/
-│  │     ├─ agents/           Avatar（狀態姿勢）、名牌與浮動特效投影、狀態色、外觀
+│  │     ├─ world/            辦公室場景：layout、building、rooms、lighting、exterior、cat/
+│  │     ├─ agents/           Avatar（狀態姿勢、走路）、AgentMotion、名牌與浮動特效投影、狀態色、外觀
 │  │     ├─ assets/           AssetProvider、procedural 家具、材質、canvas textures
 │  │     ├─ camera/           開場飛入、預設視角、Orbit + WASD
 │  │     ├─ store/            Zustand store（快照 + SSE，套用共用 reducer）
@@ -218,7 +244,7 @@ Owner (You)
 │  │     └─ ui/               HUD（Roster、Director Chat、Agent / Task / Cat Panel、Toasts、Stats）
 │  └─ server/                 ✅ Fastify API、SSE、事件管線、SQLite 持久化、重啟恢復
 ├─ packages/
-│  ├─ shared/                 ✅ 型別、OfficeEvent、reduceEvent、組織 seed、座位
+│  ├─ shared/                 ✅ 型別、OfficeEvent、reduceEvent、組織 seed、座位、世界模型（導航圖、目的地、走路時間）
 │  ├─ agent-runtime/          ✅ Director / Manager / Employee 行為（含 Demo 流程測試）
 │  ├─ task-engine/            ✅ 任務狀態機、建立專案 / 任務、roll-up
 │  └─ llm-provider/           ✅ LLMProvider 介面 + Mock provider（Claude / OpenAI 待加入）

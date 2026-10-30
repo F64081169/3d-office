@@ -17,7 +17,7 @@
     "build": "npm run build -w @office/web",
     "start": "npm run start -w @office/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test -w @office/agent-runtime"
+    "test": "npm run test --workspaces --if-present"
   },
   "engines": {
     "node": ">=20.19"

@@ -55,14 +55,14 @@ flowchart LR
 | --- | --- | --- |
 | Shared domain model + reducer | `packages/shared` | ✅ P1 型別、P3 事件與 `reduceEvent` |
 | Frontend / HUD | `apps/web/src/ui` | ✅ Roster、View bar（P1）、Agent / Cat Panel（P2）、Director Chat、Task view、Toasts（P3）；Dashboard 🔜 P5 |
-| 3D World | `apps/web/src/world`, `agents`, `camera`, `assets` | ✅ P1；狀態姿勢 P2；移動 🔜 P4 |
+| 3D World | `apps/web/src/world`, `agents`, `camera`, `assets` | ✅ P1；狀態姿勢 P2；走動 P4 |
 | Backend API + SSE | `apps/server` | ✅ Phase 3 |
 | Task Engine | `packages/task-engine` | ✅ Phase 3 |
 | Agent Runtime | `packages/agent-runtime` | ✅ Phase 3 |
 | LLM Provider | `packages/llm-provider` | ✅ Mock（P3）；Claude / OpenAI 🔜 |
 | Event Bus | server `Company` + SSE + 前端 `applyEvent` | ✅ Phase 3（原訂 P4，提前：沒有它無法看到委派過程） |
 | Database | `prisma/schema.prisma` + `apps/server/src/db.ts` | ✅ Phase 3 |
-| Navigation graph | `apps/web/src/world/navigation.ts` | ✅ P2（貓使用）；Agent 走動 🔜 P4 |
+| World model（導航圖、目的地、走路時間） | `packages/shared/src/world.ts` | ✅ P2 建立（貓）；P4 移到 shared，前端走動與 runtime 計時共用 |
 | Performance / Coins 自動發放 / Dashboard | — | 🔜 Phase 5 |
 
 ---
@@ -88,6 +88,8 @@ flowchart LR
   - 底部 View bar；右下 `?`：操作說明、效能統計、LLM provider、Reset company。
 - **Agent 名牌與浮動特效**（`src/agents/tags.tsx`）：
   - 名牌（含貓）與浮字（`+100 Coins`、`✓ Task done`、`♥ purr`）都放在同一個 DOM layer，由 Canvas 內的 `TagProjector` 每幀投影到螢幕座標。
+  - 投影在每幀渲染**之後**執行（`addAfterEffect`），用的就是畫面上的相機與 Agent 位置；一般 `useFrame` 會比相機與走路更新早一幀，鏡頭飛行時名牌會落後。
+  - 3D 物件透過 `agents/anchors.ts` 註冊 anchor（頭頂上方），名牌、Follow 鏡頭、點擊聚焦都讀同一個即時位置。
   - 有 LOD，且會被不透明牆遮擋。
   - 不使用 drei `<Html>`：React 19 StrictMode 下會遺失 root，每個 root 也有額外成本。
 
@@ -140,41 +142,70 @@ interface AssetProvider {
 
 ### 3.3 Avatar
 
-- Stylized capsule character（約 1.8k triangles），有髖、膝、肩、頭等關節，可坐、可站，之後可走路。
+- Stylized capsule character（約 1.8k triangles），有髖、膝、肩、頭等關節，可坐、可站、可走路（Phase 4）。
 - 外觀（膚色、髮型、衣服、眼鏡）在 `agents/appearance.ts`；部門色在 `agents/status.ts`。
 - 坐姿依 status 變化（Phase 2）：idle 放鬆張望、thinking 手托下巴、working 打字、blocked 抱頭 + 紅色警示光圈；收到 `AGENT_REWARDED` 會舉手歡呼。
 - 螢幕內容也是 status 的投影：`screenFor(agent)` 依 status 與部門選擇 idle / docs / code / dashboard / error 畫面。
 - 投影用 blob shadow（不進 shadow map），因為 shadow map 只算一次（見 §3.5）。
 
-### 3.4 Status → 3D 行為（坐姿 Phase 2 ✅、移動 Phase 4 🔜）
+### 3.4 Status → 3D 行為 ✅（坐姿 Phase 2、走動 Phase 4）
 
 | Status | 位置 | 姿勢 / 效果 |
 | --- | --- | --- |
 | `idle` | 自己座位 | 坐著，螢幕待機桌布 |
 | `thinking` | 自己座位 | 坐著、手托下巴，紫色狀態燈 |
 | `working` | 自己座位 | 打字動畫，螢幕切換成 code / docs |
-| `meeting` | `MEETING_SEATS` | 走到會議室入座 |
-| `reporting` | 主管座位旁 | 走到主管桌前站著 |
-| `break` | Lounge / Coffee Bar | 走過去坐下或站在吧台 |
-| `blocked` | 原地 | 紅色警示光圈 + 名牌閃爍 |
-| completed（Task 事件） | 原地 | `+N Coins` 浮字、完成動畫 |
+| `meeting` | 會議室的固定座位（Aria 坐大螢幕前的主位，其他人依團隊分兩側） | 走進會議室、入座、說話手勢 |
+| `reporting` | Employee：主管桌前一排站著；Manager：Director Office 的訪客椅；Director：自己辦公桌旁（對 Owner 報告） | 站著比手勢 / 坐著說話 |
+| `break` | 每人固定的位置：Employees 坐 Lounge 沙發或單人椅；Managers 站在 Coffee Bar；Director 站在辦公室窗邊 | 坐下放鬆 / 站著拿咖啡杯 |
+| `blocked` | 原地（座位） | 紅色警示光圈 + 名牌閃爍 |
+| completed（Task 事件） | 原地 | `✓ Task done` 浮字（`+N Coins` 是 Phase 5） |
 
-移動採 **waypoints + lerp**，不做 NavMesh。Phase 2 已建立導航圖（`world/navigation.ts`）：
+#### 一份世界模型，server 與前端共用
 
-- **走道節點**：北側走道 z = -4.3、南側走道 z ≈ 3.3，加上 4 條縱向通道；邊都避開家具與牆。
-- **目的地（Spot）**：每個目的地掛在一個節點上，透過一小段 `via` 支線進入。
-- **路徑** = 退出目前支線 → 走道 BFS → 進入目標支線；高度差超過 0.2 m 的段落以拋物線跳躍（貓跳上沙發）。
-- 網址加 `?nav` 可以看到整張圖。
-- Phase 4 只需要為會議室座位、主管桌前、休息區加上 Spot，Agent 就能共用同一套路徑。
+移動採 **waypoints + lerp**，不做 NavMesh。Phase 2 為貓建的導航圖在 Phase 4 移到 `packages/shared/src/world.ts`，讓前端（畫出走路）與 agent runtime（算出何時走到）用同一份資料：
+
+- **走道圖**：北側走道 z = -4.3、工作列 z = -1.4、南側走道 z ≈ 3.4、4 條縱向通道、團隊桌之間的通道。線段在交點自動切成節點與邊，用 Dijkstra 找最短路徑。
+- **Place**：`placeFor(agent, status)` 回傳 `{ entry, via, position, rotationY, pose }`。
+  - `entry` 是走道上的接入點；建圖時自動吸附到最近的邊，離走道超過 0.25 m 就拋錯。
+  - `via` 是從走道走進座位的支線（例如繞過會議桌、進 Director Office 的門）。
+- **路徑**：`routeBetween(from, to)` = 沿原支線倒退回走道 → 走道最短路徑 → 進入目標支線；同一個房間內直接走過去。
+- **走路時間**：`travelSeconds` = 路徑長 / `WALK_SPEED`（1.6 m/s）+ 起身、坐下時間（各 0.45 s）。
+- **測試**（`packages/shared/test/world.test.ts`）：
+  - 任兩個目的地之間的路徑都不碰到家具（線段與家具矩形相交檢查，留 0.1 m 邊距）。
+  - 會影響時間軸的走路有上限（例如去會議室 < 16 s）。
+  - 沒有兩個人共用同一個座位或休息位置。
+- 網址加 `?nav` 可以看到整張圖：走道（青色）、Agent 目的地支線（琥珀色）、貓的目的地（粉紅）。
+
+#### Server：知道每個人什麼時候走到
+
+- Runtime 每次發出 `AGENT_STATUS_CHANGED` 時，用 `travelSeconds` 記下該 Agent 預計抵達的時間（`location` map；走到一半又改目的地時會累加）。
+- 需要「人到了才開始」的步驟會等抵達（`walkTo` / `ctx.until`）：
+  - Kickoff meeting：Director 與相關 Managers 全部入座後，才開始 5 秒的會議。
+  - 回報：走到主管桌前或 Director Office 之後，才開始 3 秒的回報。
+- 所以 server 時間軸和畫面自然一致，前端不需要回報位置；關掉分頁、重新整理或多個分頁同時看都不影響流程。
+
+#### 前端：`AgentMotion`（`agents/motion.ts`）
+
+- 收到新狀態 → `placeFor` → 起身 → 沿路徑以 `WALK_SPEED × SIM_SPEED` 行走（擺手、擺腿、平滑轉向）→ 坐下或站定。
+- 走到一半狀態又變：先沿已走過的路退回走道，再前往新目的地。不穿牆、不瞬移。
+- 開啟頁面時直接放在目前狀態的位置（例如正在開會的人一開始就坐在會議室）。
+- 不限制每幀的 dt，所以即使 FPS 很低，走路時間仍和 server 計算一致。
+
+#### Break
+
+- Employee 完成任務後，約一半機率去休息（依 task id hash，所以結果可重現）。
+- 背景排程（`startAmbient`）：每 25–45 秒讓一位閒置的 Employee 或 Manager 去休息，同時最多 2 人在休息。`AMBIENT=0` 可關閉。
+- 休息 14–24 秒後回座位；途中被指派任務會立刻走回座位開始工作。
 
 ### 3.4.1 Office cat（Phase 2）
 
-`world/cat/OfficeCat.tsx`：獨立於組織之外的 NPC，用來驗證導航圖與跟隨鏡頭。
+`world/cat/OfficeCat.tsx`：獨立於組織之外的 NPC，用來驗證導航圖與跟隨鏡頭。目的地在 `world/cat/catSpots.ts`，路徑用 shared 的 `routeBetween`，只多了跳上沙發的拋物線。
 
 - 行為：簡單的狀態機（stay ↔ walk），依權重隨機選目的地，停留時間依目的地類型（午睡 / 看風景 / 討食 / 拜訪）而定。
 - 姿勢：walk / sit / loaf 三組關節目標值，每幀平滑插值。
 - 狀態變化（activity、地點）寫入 store，讓 Cat Panel 與名牌同步。
-- Follow 鏡頭（`CameraRig`）對任何註冊了 anchor 的物件都適用，所以之後也能跟隨 Agent。
+- Follow 鏡頭（`CameraRig`）對任何註冊了 anchor 的物件都適用，Agent 走動時也一樣。
 
 ### 3.5 效能策略（目標：桌機 Chrome 約 60 FPS）
 
@@ -219,6 +250,7 @@ Node 22 + TypeScript（以 `tsx` 執行，不需 build）+ Fastify 5。
 | `LLM_PROVIDER` | `mock` | `claude` / `openai` 尚未實作，會退回 Mock 並警告 |
 | `SIM_SPEED` | `1` | 模擬速度倍率（思考時間與走路 / 開會停頓都會縮短） |
 | `MOCK_BLOCK_RATE` | `0.1` | 非 Demo 任務第一次執行時遇到 Blocked 的機率 |
+| `AMBIENT` | `1` | `0` = 關閉閒置 Agent 自動去休息 |
 | `SERVE_WEB` | `1` | `0` = 不提供前端靜態檔 |
 
 ### 4.1 事件管線（`src/company.ts`）
@@ -288,7 +320,7 @@ flowchart LR
     - 其他 → 建立專案。
   - Owner 直接指派（Assign Task）：Director → 開專案；其他人 → 建立 `createdBy: owner` 的任務，完成後在該 Agent 的 thread 回報。
   - Reset：`COMPANY_RESET` 讓 generation +1，所有進行中的 action 在下一步自動取消。
-- 停頓（`PAUSE`，speed 1）：開會 5 s、回報 3 s、Blocked 5 s。整個 Demo 約 40 秒；`SIM_SPEED=2` 約 20 秒。
+- 停頓（`PAUSE`，speed 1）：開會 5 s、回報 3 s、Blocked 5 s，都從人走到定位後才開始計時（§3.4）。整個 Demo 約 2 分鐘（Phase 3 沒有走路時約 40 秒）；`SIM_SPEED=2` 約 1 分鐘。
 - 測試：`npm test` 在記憶體中以 40× 速度跑完整 Demo，檢查：
   - 委派順序與任務指派對象。
   - 每個任務都有結果。

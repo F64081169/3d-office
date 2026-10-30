@@ -5,6 +5,7 @@ import {
   directReports,
   OWNER_ID,
   projectTasks,
+  travelSeconds,
   type Agent,
   type AgentStatus,
   type CompanyState,
@@ -14,9 +15,20 @@ import {
 } from '@office/shared'
 import type { TaskEngine } from '@office/task-engine'
 
-/** Non-LLM pauses (walking, meeting, waiting to be unblocked), ms at speed 1. */
+/** Time spent once people have arrived (talking, waiting to be unblocked), ms at speed 1. */
 export const PAUSE = { meeting: 5000, report: 3000, blocked: 5000, reply: 600 }
+/** How long a break lasts once the agent got there, ms at speed 1. */
+const BREAK_STAY: [number, number] = [14000, 24000]
+/** Idle agents wander off for a break every so often (ambient life), ms at speed 1. */
+const AMBIENT_EVERY: [number, number] = [25000, 45000]
+const MAX_ON_BREAK = 2
 const MAX_ATTEMPTS = 3
+
+const hash = (s: string) => {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
+  return (h >>> 0) / 4294967296
+}
 
 export type RuntimeDeps = {
   engine: TaskEngine
@@ -33,7 +45,10 @@ export type RuntimeDeps = {
 type Ctx = {
   /** Await an async step; throws if the company was reset meanwhile. */
   step: <T>(p: Promise<T>) => Promise<T>
+  /** Wait `ms` of simulated time (scaled by speed). */
   pause: (ms: number) => Promise<void>
+  /** Wait until a wall-clock timestamp (e.g. someone's arrival). */
+  until: (timestamp: number) => Promise<void>
 }
 
 class Cancelled extends Error {}
@@ -61,6 +76,8 @@ export class AgentRuntime {
   private queues = new Map<string, Promise<void>>()
   private pending = new Map<string, number>()
   private generation = 0
+  /** Where each agent is physically heading (the place of this status) and when they arrive. */
+  private location = new Map<string, { status: AgentStatus; arriveAt: number }>()
 
   constructor(deps: RuntimeDeps) {
     this.engine = deps.engine
@@ -81,6 +98,7 @@ export class AgentRuntime {
       this.generation++
       this.queues.clear()
       this.pending.clear()
+      this.location.clear()
       return
     }
     if (e.type === 'TASK_ASSIGNED') {
@@ -155,12 +173,14 @@ export class AgentRuntime {
       const { project, root } = this.engine.createProject({ prompt: text, title: plan.title ?? text, directorId: director.id })
       this.engine.start(root.id)
 
-      // Kick-off: the Director and every manager who gets a workstream meet first.
-      const involved = [...new Set((plan.work ?? []).map((w) => w.assignee))]
+      // Kick-off: the Director and every manager who gets a workstream walk to the
+      // meeting room; it starts when the last one sits down. Managers stay there until
+      // their own next step walks them back to their desks.
+      const involved = [...new Set((plan.work ?? []).map((w) => w.assignee))].filter((m) => !this.busy(m))
       this.setStatus(director.id, 'meeting', root.id)
-      for (const m of involved) if (!this.busy(m)) this.setStatus(m, 'meeting', null)
+      for (const m of involved) this.setStatus(m, 'meeting', null)
+      await ctx.until(Math.max(...[director.id, ...involved].map((id) => this.arrival(id))))
       await ctx.pause(PAUSE.meeting)
-      for (const m of involved) this.settle(m)
 
       for (const w of plan.work ?? []) {
         const { assignee, ...rest } = w
@@ -183,7 +203,7 @@ export class AgentRuntime {
 
   private async managerSplit(ctx: Ctx, manager: Agent, taskId: string) {
     const task = this.engine.task(taskId)
-    this.setStatus(manager.id, 'thinking', task.id)
+    await this.walkTo(ctx, manager.id, 'thinking', task.id)
     const team = directReports(this.getState().agents, manager.id)
     const res = await ctx.step(
       this.provider.runAgent({ agent: manager, mode: 'split', task, team, projectPrompt: this.promptOf(task) }),
@@ -197,7 +217,7 @@ export class AgentRuntime {
 
   private async employeeWork(ctx: Ctx, employee: Agent, taskId: string) {
     const projectPrompt = this.promptOf(this.engine.task(taskId))
-    this.setStatus(employee.id, 'thinking', taskId)
+    await this.walkTo(ctx, employee.id, 'thinking', taskId)
     await ctx.step(this.provider.runAgent({ agent: employee, mode: 'prepare', task: this.engine.task(taskId), projectPrompt }))
 
     this.engine.start(taskId)
@@ -214,9 +234,11 @@ export class AgentRuntime {
       res = await ctx.step(this.provider.runAgent({ agent: employee, mode: 'execute', task: this.engine.task(taskId), attempt, projectPrompt }))
     }
 
-    this.setStatus(employee.id, 'reporting', taskId)
+    await this.walkTo(ctx, employee.id, 'reporting', taskId)
     await ctx.pause(PAUSE.report)
     this.finish(employee, taskId, res.blocked ? `Could not finish: ${res.blocked}` : res.text)
+    // Done with their part: about half the time they grab a coffee before the next thing.
+    if (hash(taskId) < 0.5) setTimeout(() => this.takeBreak(employee.id), 0)
   }
 
   private scheduleRollup(parentId: string) {
@@ -231,7 +253,7 @@ export class AgentRuntime {
   private async managerReview(ctx: Ctx, manager: Agent, taskId: string) {
     const task = this.engine.task(taskId)
     if (task.status === 'completed') return
-    this.setStatus(manager.id, 'thinking', taskId)
+    await this.walkTo(ctx, manager.id, 'thinking', taskId)
     this.engine.submitForReview(taskId)
     const res = await ctx.step(
       this.provider.runAgent({
@@ -242,7 +264,7 @@ export class AgentRuntime {
         projectPrompt: this.promptOf(task),
       }),
     )
-    this.setStatus(manager.id, 'reporting', taskId)
+    await this.walkTo(ctx, manager.id, 'reporting', taskId)
     await ctx.pause(PAUSE.report)
     this.finish(manager, taskId, res.text)
   }
@@ -251,7 +273,7 @@ export class AgentRuntime {
     const project = this.getState().projects[projectId]
     const root = this.engine.task(project.rootTaskId)
     if (root.status === 'completed') return
-    this.setStatus(director.id, 'thinking', root.id)
+    await this.walkTo(ctx, director.id, 'thinking', root.id)
     this.engine.submitForReview(root.id)
     const res = await ctx.step(
       this.provider.runAgent({
@@ -263,7 +285,7 @@ export class AgentRuntime {
         projectTitle: project.title,
       }),
     )
-    this.setStatus(director.id, 'reporting', root.id)
+    await this.walkTo(ctx, director.id, 'reporting', root.id)
     await ctx.pause(PAUSE.report)
     this.engine.complete(root.id, res.text)
     this.chat(director.id, director.id, res.text, project.id)
@@ -311,7 +333,47 @@ export class AgentRuntime {
     this.chat(DIRECTOR_ID, DIRECTOR_ID, lines.join('\n'))
   }
 
+  /** An idle agent wanders to their favourite break spot, then comes back. Work interrupts it. */
+  takeBreak(agentId: string) {
+    const agent = this.agent(agentId)
+    if (!agent || agent.status !== 'idle' || this.busy(agentId)) return
+    const gen = this.generation
+    const [lo, hi] = BREAK_STAY
+    this.setStatus(agentId, 'break', null)
+    const stay = (lo + hash(`${agentId}${Date.now()}`) * (hi - lo)) / this.speed
+    setTimeout(() => {
+      const a = this.agent(agentId)
+      if (gen === this.generation && a?.status === 'break' && !this.busy(agentId)) this.settle(agentId)
+    }, Math.max(0, this.arrival(agentId) - Date.now()) + stay)
+  }
+
+  /** Every so often an idle agent takes a break, so the office never looks frozen. Returns a stop function. */
+  startAmbient() {
+    let timer: ReturnType<typeof setTimeout>
+    const tick = () => {
+      const agents = this.getState().agents
+      const onBreak = agents.filter((a) => a.status === 'break').length
+      const idle = agents.filter((a) => a.level < 3 && a.status === 'idle' && !this.busy(a.id))
+      if (onBreak < MAX_ON_BREAK && idle.length) this.takeBreak(idle[Math.floor(Math.random() * idle.length)].id)
+      const [lo, hi] = AMBIENT_EVERY
+      timer = setTimeout(tick, (lo + Math.random() * (hi - lo)) / this.speed)
+    }
+    timer = setTimeout(tick, AMBIENT_EVERY[0] / this.speed)
+    return () => clearTimeout(timer)
+  }
+
   // --------------------------------------------------------------- plumbing
+
+  /** Change status and wait until the agent has physically walked to that status's place. */
+  private async walkTo(ctx: Ctx, agentId: string, status: AgentStatus, taskId?: string | null) {
+    this.setStatus(agentId, status, taskId)
+    await ctx.until(this.arrival(agentId))
+  }
+
+  /** Wall-clock time the agent reaches its current destination. */
+  private arrival(agentId: string) {
+    return this.location.get(agentId)?.arriveAt ?? 0
+  }
 
   private enqueue(agentId: string, action: (ctx: Ctx) => Promise<void>) {
     const gen = this.generation
@@ -324,6 +386,10 @@ export class AgentRuntime {
       },
       pause: async (ms) => {
         await sleep(ms / this.speed)
+        if (!alive()) throw new Cancelled()
+      },
+      until: async (timestamp) => {
+        await sleep(Math.max(0, timestamp - Date.now()))
         if (!alive()) throw new Cancelled()
       },
     }
@@ -358,7 +424,21 @@ export class AgentRuntime {
     if (!a) return
     const sameTask = taskId === undefined || (a.currentTaskId ?? null) === taskId
     if (a.status === status && sameTask) return
+    this.track(a, status)
     this.emit({ type: 'AGENT_STATUS_CHANGED', agentId, status, taskId })
+  }
+
+  /**
+   * Remember where the agent is walking to. If they were still on their way somewhere,
+   * count the rest of that walk too (the browser reroutes from wherever they are).
+   */
+  private track(agent: Agent, status: AgentStatus) {
+    const now = Date.now()
+    const prev = this.location.get(agent.id) ?? { status: agent.status, arriveAt: now }
+    const walk = travelSeconds(agent, prev.status, status, this.getState().agents)
+    if (walk === 0) return
+    const stillWalking = Math.max(0, prev.arriveAt - now)
+    this.location.set(agent.id, { status, arriveAt: now + stillWalking + (walk * 1000) / this.speed })
   }
 
   private chat(thread: string, from: string, text: string, projectId?: string) {

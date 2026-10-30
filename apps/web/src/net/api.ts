@@ -11,7 +11,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return data as T
 }
 
-export type Snapshot = { seq: number; provider: string; state: CompanyState }
+export type Snapshot = { seq: number; provider: string; speed: number; state: CompanyState }
 export type NewTaskInput = { title: string; description?: string; priority: TaskPriority }
 
 /** Commands go to the server; their effects come back as events on the stream. */

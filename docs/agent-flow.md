@@ -169,6 +169,11 @@ stateDiagram-v2
 
 座位資料：`HOME_SEATS`（`packages/shared/src/org.ts`）、`MEETING_SEATS`（`apps/web/src/world/layout.ts`）。
 
+實作進度：
+
+- ✅ Phase 2：座位上的部分已完成，包括 idle / thinking / working / blocked 的姿勢、螢幕內容、名牌與警示光圈。可從 Agent Panel 的 Status preview 手動觸發。
+- 🔜 Phase 4：需要移動的部分（meeting / reporting / break），沿用 `world/navigation.ts` 的導航圖。
+
 ## 7. 績效與 Coins
 
 每個 Task 完成時計分（0–100）：

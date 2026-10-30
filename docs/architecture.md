@@ -53,13 +53,14 @@ flowchart LR
 | 層 | 位置 | 狀態 |
 | --- | --- | --- |
 | Shared domain model | `packages/shared` | ✅ Phase 1 |
-| Frontend / HUD | `apps/web/src/ui` | ✅ Phase 1（Roster、View bar、Stats）；Panel / Chat / Dashboard 🔜 |
+| Frontend / HUD | `apps/web/src/ui` | ✅ Roster、View bar、Stats（P1）、Agent / Cat Panel（P2）；Chat / Dashboard 🔜 |
 | 3D World | `apps/web/src/world`, `agents`, `camera`, `assets` | ✅ Phase 1 |
 | Backend API | `apps/server` | 🔜 Phase 3 |
 | Task Engine | `packages/task-engine` | 🔜 Phase 3 |
 | Agent Runtime | `packages/agent-runtime` | 🔜 Phase 3 |
 | LLM Provider | `packages/llm-provider` | 🔜 Phase 3（Mock 優先） |
-| Event Bus | server 內 + 前端 store | 🔜 Phase 4 |
+| Event Bus | server 內 + 前端 store | 前端 `applyEvent` ✅ Phase 2；server 端 🔜 Phase 4 |
+| Navigation graph | `apps/web/src/world/navigation.ts` | ✅ Phase 2（貓使用；Agent 走動 Phase 4） |
 | Database | `prisma/` | 🔜 Phase 3 |
 
 ---
@@ -67,12 +68,15 @@ flowchart LR
 ## 2. Frontend（apps/web）
 
 - **React 19 + TypeScript + Vite**：單頁應用。
-- **Zustand**（`src/store/officeStore.ts`）：唯一的前端狀態來源。Phase 1 存放 agents（seed）、hover、相機鏡頭請求、效能統計。Phase 3 之後，store 只透過「套用事件」來更新（見 §6），UI 與 3D 都只是讀 store。
+- **Zustand**（`src/store/officeStore.ts`）：唯一的前端狀態來源，存放 agents、選取 / hover、相機鏡頭與跟隨、浮動特效、貓的狀態、效能統計。
+  - 公司狀態（agents 的 status、coins…）**只能**經由 `applyEvent(OfficeEvent)` 修改（見 §6）。
+  - Phase 2 由 `dispatch()` 在前端直接呼叫 `applyEvent`，例如 Reward +100、Status preview。Phase 3 只要把 `dispatch` 換成呼叫 API，再把 server 事件串流接到 `applyEvent`。
 - **HUD**（`src/ui/Hud.tsx`）：一般 DOM，疊在 Canvas 上。
   - Organization roster：Owner → Director → Managers → Employees，即時顯示 status；hover 會在 3D 中亮出該 Agent 的部門光圈，點擊飛到該 Agent。
   - View bar：8 個相機預設點（Overview、Workspace、Director、Meeting Room、Lounge、Coffee Bar、Bathroom、City View）。
   - Performance stats（按 `P`）：FPS、draw calls、triangles。
-- **Agent 名牌**（`src/agents/tags.tsx`）：所有名牌放在同一個 DOM layer，由 Canvas 內的 `TagProjector` 每幀投影到螢幕座標。
+  - Agent Panel / Cat Panel（`src/ui/SidePanel.tsx`）：點擊 Agent 或貓時出現；`StatusBadge` 是 Roster、Panel、名牌共用的狀態元件。
+- **Agent 名牌與浮動特效**（`src/agents/tags.tsx`）：所有名牌（含貓）與 `+100 Coins` 之類的浮字放在同一個 DOM layer，由 Canvas 內的 `TagProjector` 每幀投影到螢幕座標。
   - 有 LOD：近距離顯示完整卡片（Name / Role / Status），遠距離縮成膠囊，從高空完全隱藏。
   - 會被不透明牆（浴室、電梯核心、隔間牆）遮擋，玻璃不會。
   - 不使用 9 個 drei `<Html>` root：React 19 StrictMode 下會遺失 root，且每個 root 都有額外成本。
@@ -128,7 +132,8 @@ interface AssetProvider {
 
 - Stylized capsule character（約 1.8k triangles），有髖、膝、肩、頭等關節，可坐、可站，之後可走路。
 - 外觀（膚色、髮型、衣服、眼鏡）在 `agents/appearance.ts`；部門色在 `agents/status.ts`。
-- Phase 1：全員 `idle`，坐在自己座位上，有呼吸、轉頭等 idle 動作。
+- 坐姿依 status 變化（Phase 2）：idle 放鬆張望、thinking 手托下巴、working 打字、blocked 抱頭 + 紅色警示光圈；收到 `AGENT_REWARDED` 會舉手歡呼。
+- 螢幕內容也是 status 的投影：`screenFor(agent)` 依 status 與部門選擇 idle / docs / code / dashboard / error 畫面。
 - 投影用 blob shadow（不進 shadow map），因為 shadow map 只算一次（見 §3.5）。
 
 ### 3.4 Status → 3D 行為（Phase 4 實作）
@@ -144,7 +149,22 @@ interface AssetProvider {
 | `blocked` | 原地 | 紅色警示光圈 + 名牌閃爍 |
 | completed（Task 事件） | 原地 | `+N Coins` 浮字、完成動畫 |
 
-移動採 **waypoints + lerp**：每個區域有出入口 waypoint，路徑 = 座位 → 區域出口 → 走道節點 → 目標區域入口 → 目標座位。不做 NavMesh。
+移動採 **waypoints + lerp**，不做 NavMesh。Phase 2 已建立導航圖（`world/navigation.ts`）：
+
+- **走道節點**：北側走道 z = -4.3、南側走道 z ≈ 3.3，加上 4 條縱向通道；邊都避開家具與牆。
+- **目的地（Spot）**：每個目的地掛在一個節點上，透過一小段 `via` 支線進入。
+- **路徑** = 退出目前支線 → 走道 BFS → 進入目標支線；高度差超過 0.2 m 的段落以拋物線跳躍（貓跳上沙發）。
+- 網址加 `?nav` 可以看到整張圖。
+- Phase 4 只需要為會議室座位、主管桌前、休息區加上 Spot，Agent 就能共用同一套路徑。
+
+### 3.4.1 Office cat（Phase 2）
+
+`world/cat/OfficeCat.tsx`：獨立於組織之外的 NPC，用來驗證導航圖與跟隨鏡頭。
+
+- 行為：簡單的狀態機（stay ↔ walk），依權重隨機選目的地，停留時間依目的地類型（午睡 / 看風景 / 討食 / 拜訪）而定。
+- 姿勢：walk / sit / loaf 三組關節目標值，每幀平滑插值。
+- 狀態變化（activity、地點）寫入 store，讓 Cat Panel 與名牌同步。
+- Follow 鏡頭（`CameraRig`）對任何註冊了 anchor 的物件都適用，所以之後也能跟隨 Agent。
 
 ### 3.5 效能策略（目標：桌機 Chrome 約 60 FPS）
 

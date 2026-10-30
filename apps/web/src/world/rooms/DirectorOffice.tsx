@@ -43,7 +43,7 @@ export function DirectorOffice() {
       <HangingSign title="DIRECTOR" subtitle="EXECUTIVE OFFICE" accent="#c9a24d" position={[-14.8, 2.75, -5.85]} width={1.8} />
 
       <Rug width={4.2} depth={3.4} color="#d6c9b5" border="#9c8a70" position={[seat.position.x, 0, -9.3]} />
-      <Workstation seat={seat} variant="executive" screen="dashboard" />
+      <Workstation agentId="director" variant="executive" />
       <Chair variant="meeting" position={[seat.position.x - 0.55, 0, -8.05]} rotation-y={Math.PI} />
       <Chair variant="meeting" position={[seat.position.x + 0.55, 0, -8.05]} rotation-y={Math.PI} />
 

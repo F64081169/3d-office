@@ -1,31 +1,42 @@
-import { HOME_SEATS, type Seat } from '@office/shared'
+import { HOME_SEATS, type Agent } from '@office/shared'
 import * as THREE from 'three'
 import { useAssets } from '../../assets/AssetProvider'
 import { MAT } from '../../assets/materials'
 import { Box, Cylinder, GEO } from '../../assets/primitives'
 import { DESK_TOP_Y } from '../../assets/procedural/furniture'
 import { signTexture, type ScreenKind } from '../../assets/textures'
+import { useOfficeStore } from '../../store/officeStore'
 import { CEILING_H } from '../layout'
 
 const DESK_DEPTH = { employee: 0.8, manager: 0.9, executive: 1.0 }
 const ACCENTS = ['#c0735a', '#33415a', '#8fa38c', '#e0b04c']
 
+/** What an agent's monitor shows: a direct read-out of their status. */
+export function screenFor(agent: Agent | undefined): ScreenKind {
+  if (!agent) return 'idle'
+  if (agent.status === 'blocked') return 'error'
+  if (agent.level >= 2) return 'dashboard'
+  if (agent.status === 'working') return agent.department === 'Engineering' ? 'code' : 'docs'
+  if (agent.status === 'thinking') return 'docs'
+  return 'idle'
+}
+
 /**
- * Chair + desk + monitor laid out in the seat's local frame: the agent sits at the
- * origin facing +z, so the desk sits just in front of them.
+ * Chair + desk + monitor laid out in the agent's home seat frame: the agent sits at
+ * the origin facing +z, so the desk sits just in front of them.
  */
 export function Workstation({
-  seat,
+  agentId,
   variant = 'employee',
-  screen = 'idle',
   seed = 0,
 }: {
-  seat: Seat
+  agentId: string
   variant?: 'employee' | 'manager' | 'executive'
-  screen?: ScreenKind
   seed?: number
 }) {
   const { Desk, Monitor, Chair, Plant } = useAssets()
+  const seat = HOME_SEATS[agentId]
+  const screen = screenFor(useOfficeStore((s) => s.agents.find((a) => a.id === agentId)))
   const d = DESK_DEPTH[variant]
   const front = -d / 2 + 0.2
   return (
@@ -106,14 +117,14 @@ export function Workspace() {
   const { Plant, Bookshelf, Armchair, CoffeeTable, Rug, FloorLamp, Stool } = useAssets()
   return (
     <group>
-      <Workstation seat={HOME_SEATS['eng-manager']} variant="manager" screen="dashboard" seed={1} />
-      <Workstation seat={HOME_SEATS['eng-a']} screen="idle" seed={2} />
-      <Workstation seat={HOME_SEATS['eng-b']} screen="idle" seed={3} />
-      <Workstation seat={HOME_SEATS['eng-c']} screen="idle" seed={4} />
-      <Workstation seat={HOME_SEATS['research-manager']} variant="manager" screen="dashboard" seed={5} />
-      <Workstation seat={HOME_SEATS['research-a']} screen="idle" seed={6} />
-      <Workstation seat={HOME_SEATS['research-b']} screen="idle" seed={7} />
-      <Workstation seat={HOME_SEATS['qa-agent']} screen="idle" seed={8} />
+      <Workstation agentId="eng-manager" variant="manager" seed={1} />
+      <Workstation agentId="eng-a" seed={2} />
+      <Workstation agentId="eng-b" seed={3} />
+      <Workstation agentId="eng-c" seed={4} />
+      <Workstation agentId="research-manager" variant="manager" seed={5} />
+      <Workstation agentId="research-a" seed={6} />
+      <Workstation agentId="research-b" seed={7} />
+      <Workstation agentId="qa-agent" seed={8} />
 
       <HangingSign title="ENGINEERING" accent="#3b9fd8" position={[-10, 2.55, -0.6]} />
       <HangingSign title="RESEARCH" accent="#e08a3c" position={[4, 2.55, -0.6]} />

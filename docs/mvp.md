@@ -27,11 +27,16 @@
 - [x] Asset abstraction（`AssetProvider` + procedural 實作）
 - [x] 文件：README、architecture、agent-flow、mvp
 
-### Phase 2 — Agent data · Click UI · Status UI
+### Phase 2 — Agent data · Click UI · Status UI ✅
 
-- [ ] 點擊 Agent → 右側 Agent Panel（Name、Role、Department、Manager、Skills、Status、Current Task、Performance、Coins）
-- [ ] Panel 按鈕：Chat、Assign Task、Reward +100、View Task
-- [ ] Status 圖示與顏色一致化（名牌、Roster、Panel）
+- [x] 點擊 Agent（3D 或 Roster）→ 右側 Agent Panel（Name、Role、Department、Manager、Skills、Status、Current Task、Performance、Coins、Team）
+- [x] Panel 按鈕：Reward +100 可用（Coins 動畫、`+100 Coins` 浮字、歡呼動作）；Chat / Assign Task / View Task 先停用，Phase 3 開放
+- [x] Status 顏色與動畫一致化（名牌、Roster、Panel 共用）
+- [x] 3D 狀態呈現（座位上）：Thinking 手托下巴、Working 打字 + 螢幕換內容、Blocked 抱頭 + 紅色警示光圈
+- [x] Status preview：手動送出 `AGENT_STATUS_CHANGED`，預先檢查每種狀態
+- [x] `OfficeEvent` 型別（shared）+ store `applyEvent`：所有狀態變化走同一個入口
+- [x] 選取光圈、點空白處 / `Esc` 關閉
+- [x] 額外：辦公室貓 Mochi（導航圖、走動 / 坐 / 午睡、跳上沙發、Pet、Follow 鏡頭）
 
 ### Phase 3 — Task engine · Director delegation · Mock Agent Provider
 
@@ -45,7 +50,7 @@
 
 - [ ] Event Bus（server）+ WebSocket / SSE → 前端 `applyEvent`
 - [ ] Status → 目的地 / 姿勢對照（見 agent-flow.md §6）
-- [ ] Waypoint 路徑 + lerp 走路動畫（坐 ↔ 站 ↔ 走）
+- [ ] Waypoint 路徑 + lerp 走路動畫（坐 ↔ 站 ↔ 走）：沿用 Phase 2 的 `navigation.ts`，補上會議室 / 主管桌 / 休息區的目的地
 - [ ] 螢幕內容隨 status 變化（idle / code / docs）
 
 ### Phase 5 — Performance · Coins · Dashboard
@@ -59,14 +64,14 @@
 
 - [ ] 後製（AO / bloom，可開關）、更好的光影
 - [ ] 浴室與高級感細節、更多道具
-- [ ] Camera：跟隨 Agent、會議時自動導播
+- [ ] Camera：會議時自動導播（跟隨模式已在 Phase 2 為貓實作，可直接用於 Agent）
 - [ ] Claude / OpenAI provider
 
 ## Demo Flow（Phase 5 完成時）
 
 1. 打開網頁 → 2. 進入 3D Office → 3. Camera 飛進辦公室 → 4. Director 在辦公室 → 5. Managers / Employees 在座位 → 6. 打開 Director Chat → 7. 輸入 "Analyze random write bottleneck." → 8. Director：「Project created.」→ 9. Dashboard 出現 Project → 10. Director 走去 Meeting Room → 11. Managers 進入 Meeting Room → 12. 任務拆解 → 13. Employees 回到座位 → 14. Thinking / Working → 15. 任務完成 → 16. Employees 向 Manager report → 17. Managers 向 Director report → 18. Director 回辦公室 → 19. Director 對 Owner 回報 → 20. Project Completed → 21. Coins distributed → 22. Performance updated → 23. 顯示「Project Completed」
 
-Phase 1 已完成步驟 1–5。
+Phase 1 已完成步驟 1–5。Phase 2 加上點擊 Agent 查看資料，以及狀態在 3D 中的呈現。
 
 ## 不做（延後）
 

@@ -5,8 +5,10 @@ import { TagProjector } from '../agents/tags'
 import { CameraRig } from '../camera/CameraRig'
 import { useOfficeStore } from '../store/officeStore'
 import { Building } from './Building'
+import { OfficeCat } from './cat/OfficeCat'
 import { Exterior, FOG } from './Exterior'
 import { Lighting } from './Lighting'
+import { NavDebug, SHOW_NAV } from './NavDebug'
 import { Bathroom } from './rooms/Bathroom'
 import { CoffeeBar } from './rooms/CoffeeBar'
 import { DirectorOffice } from './rooms/DirectorOffice'
@@ -30,6 +32,8 @@ export function OfficeScene() {
       <Lobby />
       <Bathroom />
       <Agents />
+      <OfficeCat />
+      {SHOW_NAV && <NavDebug />}
       <TagProjector />
       <CameraRig />
       <StatsProbe />

@@ -1,22 +1,30 @@
 import { directReports, OWNER, type Agent } from '@office/shared'
 import { useEffect, useState } from 'react'
-import { DEPT_COLOR, STATUS_META } from '../agents/status'
+import { DEPT_COLOR } from '../agents/status'
 import { AgentTags } from '../agents/tags'
 import { useOfficeStore } from '../store/officeStore'
 import { CAMERA_PRESETS } from '../world/layout'
+import { SidePanel } from './SidePanel'
+import { StatusBadge } from './StatusBadge'
 
 export function Hud() {
   const introDone = useOfficeStore((s) => s.introDone)
   const toggleStats = useOfficeStore((s) => s.toggleStats)
+  const select = useOfficeStore((s) => s.select)
+  const follow = useOfficeStore((s) => s.follow)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.('input, textarea')) return
       if (e.key === '`' || e.key.toLowerCase() === 'p') toggleStats()
+      if (e.key === 'Escape') {
+        select(null)
+        follow(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggleStats])
+  }, [toggleStats, select, follow])
 
   return (
     <div className={`hud ${introDone ? 'hud--ready' : ''}`}>
@@ -24,6 +32,7 @@ export function Hud() {
       <Brand />
       <Roster />
       <ViewBar />
+      <SidePanel />
       <Help />
       <Stats />
       {!introDone && <div className="intro-hint">Entering Claude Office · click or drag to skip</div>}
@@ -39,7 +48,7 @@ function Brand() {
         <div className="brand__title">Claude Office</div>
         <div className="brand__subtitle">AI Agent Company Simulator</div>
       </div>
-      <span className="chip">MVP · Phase 1</span>
+      <span className="chip">MVP · Phase 2</span>
     </header>
   )
 }
@@ -81,11 +90,10 @@ function Roster() {
 }
 
 function RosterRow({ agent, depth }: { agent: Agent; depth: number }) {
-  const hovered = useOfficeStore((s) => s.hoveredAgentId === agent.id)
-  const active = useOfficeStore((s) => s.activeView === `agent:${agent.id}`)
+  const hovered = useOfficeStore((s) => s.hoveredId === agent.id)
+  const active = useOfficeStore((s) => s.selectedId === agent.id)
   const setHovered = useOfficeStore((s) => s.setHovered)
   const focusAgent = useOfficeStore((s) => s.focusAgent)
-  const status = STATUS_META[agent.status]
   return (
     <button
       className={`roster__row ${hovered ? 'is-hovered' : ''} ${active ? 'is-active' : ''}`}
@@ -97,10 +105,7 @@ function RosterRow({ agent, depth }: { agent: Agent; depth: number }) {
       <span className="avatar-dot" style={{ background: DEPT_COLOR[agent.department] }} />
       <span className="roster__name">{agent.name}</span>
       <span className="roster__role">{agent.role}</span>
-      <span className="status-pill" style={{ '--status': status.color } as React.CSSProperties}>
-        <i />
-        {status.label}
-      </span>
+      <StatusBadge status={agent.status} />
     </button>
   )
 }
@@ -121,21 +126,30 @@ function ViewBar() {
 
 function Help() {
   const toggleStats = useOfficeStore((s) => s.toggleStats)
+  const [open, setOpen] = useState(false)
   return (
-    <aside className="panel help">
-      <div>
-        <kbd>Drag</kbd> orbit · <kbd>Right-drag</kbd> pan · <kbd>Scroll</kbd> zoom
-      </div>
-      <div>
-        <kbd>W</kbd>
-        <kbd>A</kbd>
-        <kbd>S</kbd>
-        <kbd>D</kbd> move · <kbd>Q</kbd>/<kbd>E</kbd> down/up · click an agent to focus
-      </div>
-      <button className="link" onClick={toggleStats}>
-        Performance stats (P)
+    <div className="help-wrap">
+      {open && (
+        <aside className="panel help">
+          <div>
+            <kbd>Drag</kbd> orbit · <kbd>Right-drag</kbd> pan · <kbd>Scroll</kbd> zoom
+          </div>
+          <div>
+            <kbd>W</kbd>
+            <kbd>A</kbd>
+            <kbd>S</kbd>
+            <kbd>D</kbd> move · <kbd>Q</kbd>/<kbd>E</kbd> down/up
+          </div>
+          <div>Click an agent or the cat for details · <kbd>Esc</kbd> close / stop following</div>
+          <button className="link" onClick={toggleStats}>
+            Performance stats (P)
+          </button>
+        </aside>
+      )}
+      <button className="panel help-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {open ? '×' : '?'}
       </button>
-    </aside>
+    </div>
   )
 }
 

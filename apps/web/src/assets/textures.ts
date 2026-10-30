@@ -244,7 +244,7 @@ export const facadeTexture = lazy(() =>
   }),
 )
 
-export type ScreenKind = 'idle' | 'code' | 'dashboard' | 'docs'
+export type ScreenKind = 'idle' | 'code' | 'dashboard' | 'docs' | 'error'
 
 function drawScreen(kind: ScreenKind, ctx: CanvasRenderingContext2D, w: number, h: number) {
   const rnd = mulberry32(kind.length * 97)
@@ -269,6 +269,23 @@ function drawScreen(kind: ScreenKind, ctx: CanvasRenderingContext2D, w: number, 
     ctx.fillText('Claude Office · standing by', 38, 134)
     ctx.fillStyle = 'rgba(255,255,255,0.25)'
     ctx.fillRect(w / 2 - 110, h - 34, 220, 22)
+    return
+  }
+  if (kind === 'error') {
+    ctx.fillStyle = '#2a1416'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#e05a4f'
+    ctx.fillRect(0, 0, w, 34)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `600 20px ${FONT}`
+    ctx.fillText('BLOCKED — needs input', 18, 24)
+    ctx.fillStyle = 'rgba(224,90,79,0.9)'
+    ctx.beginPath()
+    ctx.arc(w / 2, h / 2 + 18, 46, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `700 64px ${FONT}`
+    ctx.fillText('!', w / 2 - 9, h / 2 + 41)
     return
   }
   if (kind === 'code') {

@@ -1,6 +1,6 @@
 # Agent Flow — Director → Manager → Employee
 
-> Phase 1 已建立組織與 3D 座位；本文件定義 Phase 3–5 要實作的任務流程與狀態同步規則。
+> 任務流程已在 Phase 3 實作（`packages/agent-runtime`，測試見 `packages/agent-runtime/test/demo.test.ts`）。Agent 走動是 Phase 4，計分與發幣是 Phase 5。
 
 ## 1. 組織圖
 
@@ -67,6 +67,18 @@ Owner 對 Director 說：
 | ↳ subtask | Write the fio benchmark matrix and regression criteria. | Omar | medium / 100 |
 
 （QA Agent 隸屬 Research Manager，所以 QA Task 由 Sofia 轉派給 Omar。）
+
+Mock provider 的 Demo 內容裡，Kenji 第一次執行時會遇到 Blocked（「Needs root access on the benchmark host to change the I/O scheduler.」），5 秒後重試完成，用來展示 Blocked 狀態。
+
+Owner 的其他互動：
+
+- **問 Director 進度**（含 status / progress / 進度）：依實際任務回報完成數與 Blocked 項目，不會開新專案。
+- **問候**（hi / 你好 …）：一般聊天回覆。
+- **和其他 Agent 對話**（Agent Panel → Chat）：他會說明手上或最近完成的任務，但不會因此開始新工作。
+- **Assign Task**：
+  - 指派給 Employee：直接執行，完成後在他的 thread 回報 `Done: …`。
+  - 指派給 Manager：Manager 先拆解給團隊，review 後回報。
+  - 指派給 Director：等同開新專案。
 
 ## 4. 完整時序（含事件與 3D 行為）
 
@@ -172,7 +184,8 @@ stateDiagram-v2
 實作進度：
 
 - ✅ Phase 2：座位上的部分已完成，包括 idle / thinking / working / blocked 的姿勢、螢幕內容、名牌與警示光圈。可從 Agent Panel 的 Status preview 手動觸發。
-- 🔜 Phase 4：需要移動的部分（meeting / reporting / break），沿用 `world/navigation.ts` 的導航圖。
+- ✅ Phase 3：所有狀態都由 runtime 依真實任務進度發出，例如 Director / Managers 的 kickoff `meeting`、Employees 的 `reporting`、Kenji 的 `blocked`。螢幕在 working 與 reporting 時顯示 code / 文件。
+- 🔜 Phase 4：需要移動的部分（meeting / reporting / break），沿用 `world/navigation.ts` 的導航圖。目前這些狀態在名牌、Roster 與 Panel 上正確顯示，但 Agent 仍坐在座位上。
 
 ## 7. 績效與 Coins
 
@@ -200,5 +213,5 @@ Coins：
 | Hard（high） | 200 |
 | Critical | 500 |
 
-- 任務完成即發放 `task.reward` 給執行者，事件 `AGENT_REWARDED`，3D 顯示 `+N Coins`。
-- Owner 可在 Agent panel 按 **Reward +100**（同樣走 `AGENT_REWARDED`）。
+- 任務完成即發放 `task.reward` 給執行者，事件 `AGENT_REWARDED`，3D 顯示 `+N Coins`（🔜 Phase 5；Phase 3 已在建立任務時寫入 `reward`，完成時 3D 顯示「✓ Task done」）。
+- Owner 可在 Agent panel 按 **Reward +100**（✅ 已實作，同樣走 `AGENT_REWARDED`，寫入資料庫）。

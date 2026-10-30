@@ -16,7 +16,7 @@ export function screenFor(agent: Agent | undefined): ScreenKind {
   if (!agent) return 'idle'
   if (agent.status === 'blocked') return 'error'
   if (agent.level >= 2) return 'dashboard'
-  if (agent.status === 'working') return agent.department === 'Engineering' ? 'code' : 'docs'
+  if (agent.status === 'working' || agent.status === 'reporting') return agent.department === 'Engineering' ? 'code' : 'docs'
   if (agent.status === 'thinking') return 'docs'
   return 'idle'
 }

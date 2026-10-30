@@ -38,20 +38,24 @@
 - [x] 選取光圈、點空白處 / `Esc` 關閉
 - [x] 額外：辦公室貓 Mochi（導航圖、走動 / 坐 / 午睡、跳上沙發、Pet、Follow 鏡頭）
 
-### Phase 3 — Task engine · Director delegation · Mock Agent Provider
+### Phase 3 — Task engine · Director delegation · Mock Agent Provider ✅
 
-- [ ] `apps/server`（Fastify）+ Prisma / SQLite + seed
-- [ ] Task Engine：狀態機、父子任務、roll-up
-- [ ] Agent Runtime：Director / Manager / Employee 行為
-- [ ] `LLMProvider` 介面 + `MockProvider`（依角色模板、延遲）
-- [ ] Director Chat Panel（固定在畫面角落）
+- [x] `apps/server`（Fastify 5）+ Prisma 7 / SQLite + seed；重啟後接手未完成任務
+- [x] Task Engine：狀態機（不合法轉換會拋錯）、父子任務、roll-up、依優先度設定 reward
+- [x] Agent Runtime：Director（plan → kickoff meeting → 工作流 → 整合報告）、Manager（拆解 → 追蹤 → review → 回報）、Employee（準備 → 執行 → Blocked 重試 → 回報）
+- [x] `LLMProvider` 介面 + `MockProvider`：Demo 題目有手寫完整內容，其他題目用通用模板，並模擬延遲
+- [x] Director Chat Panel（左下）：嵌入即時 Project card、打字中動畫、Demo 題目建議
+- [x] Agent Panel 的 Chat / Assign Task / View Task 開放；Task view；Project Completed 通知
+- [x] 提前完成 Phase 4 的 Event Bus：server 事件管線 + SSE（重連補送、resync）→ 前端共用 `reduceEvent`
+- [x] `npm test`：記憶體內以 40 倍速跑完整 Demo 並驗證委派順序、狀態序列、結果
+- [x] 驗證過：完整 Demo 在瀏覽器中跑完（約 100 個事件）；在專案進行中 `kill -9` server 後重啟能接手完成
 
-### Phase 4 — Movement · Event system
+### Phase 4 — Movement
 
-- [ ] Event Bus（server）+ WebSocket / SSE → 前端 `applyEvent`
+- [x] ~~Event Bus（server）+ SSE → 前端 `applyEvent`~~（Phase 3 已完成）
 - [ ] Status → 目的地 / 姿勢對照（見 agent-flow.md §6）
 - [ ] Waypoint 路徑 + lerp 走路動畫（坐 ↔ 站 ↔ 走）：沿用 Phase 2 的 `navigation.ts`，補上會議室 / 主管桌 / 休息區的目的地
-- [ ] 螢幕內容隨 status 變化（idle / code / docs）
+- [x] ~~螢幕內容隨 status 變化（idle / code / docs / error）~~（Phase 2–3 已完成）
 
 ### Phase 5 — Performance · Coins · Dashboard
 
@@ -71,7 +75,12 @@
 
 1. 打開網頁 → 2. 進入 3D Office → 3. Camera 飛進辦公室 → 4. Director 在辦公室 → 5. Managers / Employees 在座位 → 6. 打開 Director Chat → 7. 輸入 "Analyze random write bottleneck." → 8. Director：「Project created.」→ 9. Dashboard 出現 Project → 10. Director 走去 Meeting Room → 11. Managers 進入 Meeting Room → 12. 任務拆解 → 13. Employees 回到座位 → 14. Thinking / Working → 15. 任務完成 → 16. Employees 向 Manager report → 17. Managers 向 Director report → 18. Director 回辦公室 → 19. Director 對 Owner 回報 → 20. Project Completed → 21. Coins distributed → 22. Performance updated → 23. 顯示「Project Completed」
 
-Phase 1 已完成步驟 1–5。Phase 2 加上點擊 Agent 查看資料，以及狀態在 3D 中的呈現。
+進度：
+
+- Phase 1 完成步驟 1–5。
+- Phase 2 加上點擊 Agent 查看資料，以及狀態在 3D 中的呈現。
+- Phase 3 完成步驟 6–9、12、14–17、19–20、23：對話、建立專案、拆解、執行、回報、Project Completed 通知。目前狀態與名牌都正確，但 Agent 還不會走動（步驟 10–11、13、18 是 Phase 4）。
+- 步驟 21–22（自動發 Coins、更新 Performance）是 Phase 5。
 
 ## 不做（延後）
 

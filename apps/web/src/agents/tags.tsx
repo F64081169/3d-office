@@ -169,6 +169,7 @@ function FloatingEffect({ effect }: { effect: FloatEffect }) {
     >
       <span>
         {effect.kind === 'coins' && <CoinIcon />}
+        {effect.kind === 'done' && '✓ '}
         {effect.text}
       </span>
     </div>

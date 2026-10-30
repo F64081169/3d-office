@@ -4,14 +4,19 @@ import { DEPT_COLOR } from '../agents/status'
 import { AgentTags } from '../agents/tags'
 import { useOfficeStore } from '../store/officeStore'
 import { CAMERA_PRESETS } from '../world/layout'
+import { ChatPanel } from './ChatPanel'
 import { SidePanel } from './SidePanel'
 import { StatusBadge } from './StatusBadge'
+import { Toasts } from './Toasts'
 
 export function Hud() {
   const introDone = useOfficeStore((s) => s.introDone)
   const toggleStats = useOfficeStore((s) => s.toggleStats)
   const select = useOfficeStore((s) => s.select)
   const follow = useOfficeStore((s) => s.follow)
+  const connect = useOfficeStore((s) => s.connect)
+
+  useEffect(() => connect(), [connect])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -29,12 +34,15 @@ export function Hud() {
   return (
     <div className={`hud ${introDone ? 'hud--ready' : ''}`}>
       <AgentTags />
-      <Brand />
-      <Roster />
+      <div className="left-col">
+        <Brand />
+        <Roster />
+        <ChatPanel />
+      </div>
       <ViewBar />
       <SidePanel />
+      <Toasts />
       <Help />
-      <Stats />
       {!introDone && <div className="intro-hint">Entering Claude Office · click or drag to skip</div>}
     </div>
   )
@@ -48,7 +56,7 @@ function Brand() {
         <div className="brand__title">Claude Office</div>
         <div className="brand__subtitle">AI Agent Company Simulator</div>
       </div>
-      <span className="chip">MVP · Phase 2</span>
+      <span className="chip">MVP · Phase 3</span>
     </header>
   )
 }
@@ -58,7 +66,7 @@ function Roster() {
   const director = agents.find((a) => !a.managerId)
   const managers = director ? directReports(agents, director.id) : []
   const coins = agents.reduce((sum, a) => sum + a.coins, 0)
-  const idle = agents.filter((a) => a.status === 'idle').length
+  const busy = agents.filter((a) => a.status !== 'idle').length
   const [open, setOpen] = useState(true)
 
   return (
@@ -68,7 +76,7 @@ function Roster() {
           Organization <span className="roster__caret">{open ? '▾' : '▸'}</span>
         </span>
         <span className="roster__meta">
-          {agents.length} agents · {idle} idle · {coins.toLocaleString()} coins
+          {agents.length} agents · {busy} busy · {coins.toLocaleString()} coins
         </span>
       </button>
       <div className="roster__owner">
@@ -114,21 +122,26 @@ function ViewBar() {
   const active = useOfficeStore((s) => s.activeView)
   const goToPreset = useOfficeStore((s) => s.goToPreset)
   return (
-    <nav className="panel viewbar">
-      {CAMERA_PRESETS.map((p) => (
-        <button key={p.id} className={active === p.id ? 'is-active' : ''} onClick={() => goToPreset(p.id)}>
-          {p.label}
-        </button>
-      ))}
-    </nav>
+    <div className="viewbar-wrap">
+      <nav className="panel viewbar">
+        {CAMERA_PRESETS.map((p) => (
+          <button key={p.id} className={active === p.id ? 'is-active' : ''} onClick={() => goToPreset(p.id)}>
+            {p.label}
+          </button>
+        ))}
+      </nav>
+    </div>
   )
 }
 
 function Help() {
   const toggleStats = useOfficeStore((s) => s.toggleStats)
+  const resetCompany = useOfficeStore((s) => s.resetCompany)
+  const provider = useOfficeStore((s) => s.provider)
   const [open, setOpen] = useState(false)
   return (
     <div className="help-wrap">
+      <Stats />
       {open && (
         <aside className="panel help">
           <div>
@@ -141,9 +154,20 @@ function Help() {
             <kbd>D</kbd> move · <kbd>Q</kbd>/<kbd>E</kbd> down/up
           </div>
           <div>Click an agent or the cat for details · <kbd>Esc</kbd> close / stop following</div>
-          <button className="link" onClick={toggleStats}>
-            Performance stats (P)
-          </button>
+          <div className="help__row">
+            <button className="link" onClick={toggleStats}>
+              Performance stats (P)
+            </button>
+            <button
+              className="link link--danger"
+              onClick={() => {
+                if (confirm('Reset the company? All projects, tasks and chat history will be deleted.')) void resetCompany()
+              }}
+            >
+              Reset company
+            </button>
+          </div>
+          <div className="help__meta">LLM provider: {provider}</div>
         </aside>
       )}
       <button className="panel help-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>

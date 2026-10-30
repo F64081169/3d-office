@@ -1,7 +1,9 @@
 import type { Agent, Vec3 } from './types'
 
 /** The human Owner. Not an Agent: the Owner only talks to the Director. */
-export const OWNER = { id: 'owner', name: 'You', role: 'Owner' } as const
+export const OWNER_ID = 'owner'
+export const OWNER = { id: OWNER_ID, name: 'You', role: 'Owner' } as const
+export const DIRECTOR_ID = 'director'
 
 export type Seat = {
   position: Vec3

@@ -1,28 +1,38 @@
-import { directReports, type AgentStatus } from '@office/shared'
+import { childrenOf, directReports, OWNER_ID, REWARD_BY_PRIORITY, type AgentStatus, type TaskPriority } from '@office/shared'
 import { useEffect, useRef, useState } from 'react'
 import { APPEARANCE, DEFAULT_APPEARANCE } from '../agents/appearance'
 import { DEPT_COLOR, STATUS_META } from '../agents/status'
-import { CAT_ID, useOfficeStore } from '../store/officeStore'
+import { CAT_ID, DIRECTOR, useOfficeStore } from '../store/officeStore'
 import { CAT_ACTIVITY, CAT_COLOR, CAT_NAME } from '../world/cat/catInfo'
 import { CoinIcon, HeartIcon, PawIcon } from './icons'
+import { RichText } from './RichText'
 import { Badge, StatusBadge } from './StatusBadge'
+import { PRIORITY_LABEL, TASK_STATUS_META, timeOf } from './taskMeta'
 
-const REWARD = 100
 const STATUSES = Object.keys(STATUS_META) as AgentStatus[]
-const LOCKED = 'Unlocks with the Task Engine (Phase 3)'
+const PRIORITIES = Object.keys(PRIORITY_LABEL) as TaskPriority[]
 
 export function SidePanel() {
   const selectedId = useOfficeStore((s) => s.selectedId)
+  const viewTaskId = useOfficeStore((s) => s.viewTaskId)
+  if (viewTaskId) return <TaskView id={viewTaskId} />
   if (!selectedId) return null
   return selectedId === CAT_ID ? <CatPanel /> : <AgentPanel id={selectedId} />
 }
 
 function AgentPanel({ id }: { id: string }) {
   const agents = useOfficeStore((s) => s.agents)
-  const dispatch = useOfficeStore((s) => s.dispatch)
+  const tasks = useOfficeStore((s) => s.tasks)
+  const online = useOfficeStore((s) => s.connection === 'online')
   const select = useOfficeStore((s) => s.select)
   const focusAgent = useOfficeStore((s) => s.focusAgent)
+  const viewTask = useOfficeStore((s) => s.viewTask)
+  const openChat = useOfficeStore((s) => s.openChat)
+  const reward = useOfficeStore((s) => s.reward)
+  const previewStatus = useOfficeStore((s) => s.previewStatus)
+  const [assigning, setAssigning] = useState(false)
   const agent = agents.find((a) => a.id === id)
+  useEffect(() => setAssigning(false), [id])
   if (!agent) return null
 
   const manager = agents.find((a) => a.id === agent.managerId)
@@ -30,6 +40,11 @@ function AgentPanel({ id }: { id: string }) {
   const look = APPEARANCE[agent.id] ?? DEFAULT_APPEARANCE
   const dept = DEPT_COLOR[agent.department]
   const perfColor = agent.performance >= 80 ? '#34b27a' : agent.performance >= 60 ? '#e0b04c' : '#e05a4f'
+  const current = agent.currentTaskId ? tasks[agent.currentTaskId] : undefined
+  const recent = Object.values(tasks)
+    .filter((t) => t.assignedTo === agent.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 4)
 
   return (
     <aside className="panel side-panel" style={{ '--dept': dept } as React.CSSProperties} aria-label={`${agent.name} details`}>
@@ -65,7 +80,15 @@ function AgentPanel({ id }: { id: string }) {
           )}
         </dd>
         <dt>Current task</dt>
-        <dd className="muted">{agent.currentTaskId ?? 'No active task'}</dd>
+        <dd>
+          {current ? (
+            <button className="link" onClick={() => viewTask(current.id)}>
+              {current.title}
+            </button>
+          ) : (
+            <span className="muted">No active task</span>
+          )}
+        </dd>
       </dl>
 
       <div className="sp-metrics">
@@ -114,41 +137,211 @@ function AgentPanel({ id }: { id: string }) {
       )}
 
       <div className="sp-actions">
-        <button disabled title={LOCKED}>
+        <button onClick={() => openChat(agent.id)} disabled={!online}>
           Chat
         </button>
-        <button disabled title={LOCKED}>
+        <button className={assigning ? 'is-active' : ''} onClick={() => setAssigning(!assigning)} disabled={!online}>
           Assign Task
         </button>
-        <button
-          className="primary"
-          onClick={() => dispatch({ type: 'AGENT_REWARDED', agentId: agent.id, coins: REWARD, reason: 'Owner reward' })}
-        >
-          <CoinIcon /> Reward +{REWARD}
+        <button className="primary" onClick={() => reward(agent.id)} disabled={!online}>
+          <CoinIcon /> Reward +100
         </button>
-        <button disabled={!agent.currentTaskId} title={agent.currentTaskId ? undefined : 'No active task'}>
+        <button disabled={!current} onClick={() => current && viewTask(current.id)} title={current ? undefined : 'No active task'}>
           View Task
         </button>
       </div>
-      <p className="sp-note">
-        {agent.level === 3 ? 'Director Chat' : 'Chat'}, Assign Task and View Task unlock with the Task Engine (Phase 3).
-      </p>
+      {assigning && <AssignForm agentId={agent.id} onDone={() => setAssigning(false)} />}
+      {agent.id === DIRECTOR && !assigning && (
+        <p className="sp-note">Talk to Aria in the chat to start a project. Assign Task does the same.</p>
+      )}
+
+      {recent.length > 0 && (
+        <section className="sp-section">
+          <h4>Recent tasks</h4>
+          <ul className="task-list">
+            {recent.map((t) => (
+              <li key={t.id}>
+                <button onClick={() => viewTask(t.id)}>
+                  <span>{t.title}</span>
+                  <Badge label={TASK_STATUS_META[t.status].label} color={TASK_STATUS_META[t.status].color} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <details className="sp-preview">
-        <summary>Status preview</summary>
-        <p>Sends the same status event the Task Engine will send, so you can check how each status looks.</p>
+        <summary>Status preview (dev)</summary>
+        <p>Forces a status so you can check how it looks. The agent returns to real work on its next step.</p>
         <div className="chips">
           {STATUSES.map((st) => (
             <button
               key={st}
               className={`chip-btn ${agent.status === st ? 'is-active' : ''}`}
-              onClick={() => dispatch({ type: 'AGENT_STATUS_CHANGED', agentId: agent.id, status: st })}
+              onClick={() => previewStatus(agent.id, st)}
+              disabled={!online}
             >
               <StatusBadge status={st} />
             </button>
           ))}
         </div>
       </details>
+    </aside>
+  )
+}
+
+function AssignForm({ agentId, onDone }: { agentId: string; onDone: () => void }) {
+  const assignTask = useOfficeStore((s) => s.assignTask)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState<TaskPriority>('medium')
+  const [busy, setBusy] = useState(false)
+  return (
+    <form
+      className="assign-form"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        if (!title.trim()) return
+        setBusy(true)
+        const ok = await assignTask(agentId, { title: title.trim(), description: description.trim() || undefined, priority })
+        setBusy(false)
+        if (ok) onDone()
+      }}
+    >
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" maxLength={200} autoFocus />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Details (optional)"
+        rows={2}
+        maxLength={2000}
+      />
+      <div className="assign-form__row">
+        <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} aria-label="Priority">
+          {PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {PRIORITY_LABEL[p]} · {REWARD_BY_PRIORITY[p]} coins
+            </option>
+          ))}
+        </select>
+        <button type="submit" className="primary" disabled={busy || !title.trim()}>
+          Assign
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function TaskView({ id }: { id: string }) {
+  const tasks = useOfficeStore((s) => s.tasks)
+  const agents = useOfficeStore((s) => s.agents)
+  const projects = useOfficeStore((s) => s.projects)
+  const selectedId = useOfficeStore((s) => s.selectedId)
+  const viewTask = useOfficeStore((s) => s.viewTask)
+  const select = useOfficeStore((s) => s.select)
+  const focusAgent = useOfficeStore((s) => s.focusAgent)
+  const task = tasks[id]
+  if (!task) return null
+
+  const name = (agentId: string) => (agentId === OWNER_ID ? 'You (Owner)' : (agents.find((a) => a.id === agentId)?.name ?? agentId))
+  const assignee = agents.find((a) => a.id === task.assignedTo)
+  const parent = task.parentTaskId ? tasks[task.parentTaskId] : undefined
+  const project = task.projectId ? projects[task.projectId] : undefined
+  const children = childrenOf({ agents, tasks, projects, messages: [] }, task.id)
+  const status = TASK_STATUS_META[task.status]
+
+  return (
+    <aside
+      className="panel side-panel"
+      style={{ '--dept': assignee ? DEPT_COLOR[assignee.department] : '#9aa3ad' } as React.CSSProperties}
+      aria-label="Task details"
+    >
+      <header className="sp-head">
+        <button className="sp-back" onClick={() => viewTask(parent && !selectedId ? parent.id : null)}>
+          ← {selectedId ? 'Back' : parent ? 'Parent' : 'Close'}
+        </button>
+        <div className="sp-title" />
+        <button className="sp-close" onClick={() => select(null)} aria-label="Close panel">
+          ×
+        </button>
+      </header>
+      <div className="task-title">{task.title}</div>
+      <div className="chips task-chips">
+        <Badge label={status.label} color={status.color} pulse={task.status === 'working'} />
+        <span className="chip-tag">{PRIORITY_LABEL[task.priority]}</span>
+        <span className="chip-tag">
+          <CoinIcon size={12} /> {task.reward}
+        </span>
+      </div>
+
+      <dl className="sp-grid">
+        <dt>Assignee</dt>
+        <dd>
+          <button className="link" onClick={() => focusAgent(task.assignedTo)}>
+            {name(task.assignedTo)}
+          </button>
+        </dd>
+        <dt>Created by</dt>
+        <dd>{name(task.createdBy)}</dd>
+        {project && (
+          <>
+            <dt>Project</dt>
+            <dd>
+              <button className="link" onClick={() => viewTask(project.rootTaskId)}>
+                {project.title}
+              </button>
+            </dd>
+          </>
+        )}
+        {parent && (
+          <>
+            <dt>Parent</dt>
+            <dd>
+              <button className="link" onClick={() => viewTask(parent.id)}>
+                {parent.title}
+              </button>
+            </dd>
+          </>
+        )}
+        <dt>Created</dt>
+        <dd>{timeOf(task.createdAt)}</dd>
+        <dt>Completed</dt>
+        <dd>{timeOf(task.completedAt)}</dd>
+      </dl>
+
+      {task.description && task.description !== task.title && <p className="task-desc">{task.description}</p>}
+      {task.status === 'blocked' && task.blockedReason && <div className="task-blocked">Blocked: {task.blockedReason}</div>}
+
+      {children.length > 0 && (
+        <section className="sp-section">
+          <h4>Subtasks</h4>
+          <ul className="task-list">
+            {children.map((c) => (
+              <li key={c.id}>
+                <button onClick={() => viewTask(c.id)}>
+                  <span>
+                    {c.title}
+                    <small>{name(c.assignedTo)}</small>
+                  </span>
+                  <Badge label={TASK_STATUS_META[c.status].label} color={TASK_STATUS_META[c.status].color} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="sp-section">
+        <h4>Result</h4>
+        {task.result ? (
+          <div className="task-result">
+            <RichText text={task.result} />
+          </div>
+        ) : (
+          <p className="muted task-pending">Not finished yet.</p>
+        )}
+      </section>
     </aside>
   )
 }

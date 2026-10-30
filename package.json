@@ -2,19 +2,27 @@
   "name": "3d-claude-office",
   "version": "0.1.0",
   "private": true,
-  "description": "3D Claude Office — AI Agent Company Simulator (MVP)",
+  "description": "3D Claude Office \u2014 AI Agent Company Simulator (MVP)",
   "type": "module",
   "workspaces": [
     "apps/web",
-    "packages/shared"
+    "apps/server",
+    "packages/shared",
+    "packages/llm-provider",
+    "packages/task-engine",
+    "packages/agent-runtime"
   ],
   "scripts": {
-    "dev": "npm run dev -w @office/web",
+    "dev": "concurrently -k -n server,web -c magenta,cyan \"npm run dev -w @office/server\" \"npm run dev -w @office/web\"",
     "build": "npm run build -w @office/web",
-    "preview": "npm run preview -w @office/web",
-    "typecheck": "npm run typecheck -w @office/shared && npm run typecheck -w @office/web"
+    "start": "npm run start -w @office/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test -w @office/agent-runtime"
   },
   "engines": {
     "node": ">=20.19"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
   }
 }

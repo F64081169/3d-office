@@ -22,7 +22,8 @@ const company = new Company(loaded?.state ?? createCompanyState(), loaded?.seq ?
 if (!loaded) await db.seed(company.state)
 
 // 2. Wire the pipeline: every event is persisted, then the runtime reacts.
-const provider = createProvider(config.provider, { speed: config.speed, blockRate: config.blockRate }, log)
+const provider = createProvider(config.provider, { speed: config.speed, blockRate: config.blockRate, model: config.model }, log)
+const providerLabel = provider.model ? `${provider.name} · ${provider.model}` : provider.name
 const engine = new TaskEngine({ getState: company.getState, emit: company.emit })
 const runtime = new AgentRuntime({ engine, provider, getState: company.getState, emit: company.emit, speed: config.speed, log })
 company.subscribe((e) => db.persist(e, company.state))
@@ -31,7 +32,7 @@ runtime.resume()
 if (config.ambient) runtime.startAmbient()
 
 // 3. HTTP: API + event stream, plus the built web app when present (npm run build).
-registerRoutes(app, { company, runtime, provider: provider.name, speed: config.speed })
+registerRoutes(app, { company, runtime, provider: providerLabel, speed: config.speed })
 const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist')
 if (config.serveWeb && existsSync(webDist)) {
   await app.register(fastifyStatic, { root: webDist })
@@ -51,6 +52,6 @@ process.on('SIGTERM', shutdown)
 
 await app.listen({ port: config.port, host: config.host })
 console.log(
-  `[server] Claude Office API on http://${config.host}:${config.port} · provider=${provider.name} · speed=${config.speed}x` +
+  `[server] Claude Office API on http://${config.host}:${config.port} · provider=${providerLabel} · speed=${config.speed}x` +
     (loaded ? ` · loaded ${Object.keys(company.state.tasks).length} tasks` : ' · seeded a fresh company'),
 )

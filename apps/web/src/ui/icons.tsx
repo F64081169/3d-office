@@ -28,3 +28,12 @@ export function HeartIcon({ size = 14 }: { size?: number }) {
     </svg>
   )
 }
+
+export function CameraIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg className="icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+      <rect x="2.5" y="6.5" width="13" height="11" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M15.5 10.5l6-3.5v10l-6-3.5z" fill="currentColor" />
+    </svg>
+  )
+}

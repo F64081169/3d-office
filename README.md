@@ -15,7 +15,7 @@
 | 3 | Task engine · Director delegation · Mock Agent Provider（＋Event stream、SQLite） | ✅ 完成 |
 | 4 | Movement（Event system 已在 Phase 3 完成） | ✅ 完成 |
 | 5 | Performance · Coins · Dashboard | ✅ 完成 |
-| 6 | Polish · Premium office · Lighting · Camera | ⏭️ 下一步 |
+| 6 | Polish：Claude provider · 自動導播 · 後製 · 辦公室細節 | ✅ 完成 |
 
 詳細清單見 [docs/mvp.md](docs/mvp.md)。
 
@@ -64,7 +64,7 @@ npm run typecheck   # 全部 workspace 型別檢查
 npm run build && npm start   # production：單一 port http://localhost:8787 同時提供 API 與前端
 ```
 
-環境變數（全部可選）：`SIM_SPEED`（模擬倍速）、`AMBIENT=0`（關閉閒置 Agent 自動去休息）、`LLM_PROVIDER`（目前只有 `mock`）、`MOCK_BLOCK_RATE`、`PORT`、`DATABASE_URL`，說明見 [architecture.md §4](docs/architecture.md)。
+環境變數（全部可選）：`SIM_SPEED`（模擬倍速）、`AMBIENT=0`（關閉閒置 Agent 自動去休息）、`LLM_PROVIDER`（`mock` / `claude`）、`LLM_MODEL`、`MOCK_BLOCK_RATE`、`PORT`、`DATABASE_URL`，說明見 [architecture.md §4](docs/architecture.md)。
 
 ## 操作
 
@@ -80,6 +80,7 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
 | 點擊空白處 / `Esc` | 關閉 Panel、停止跟隨 |
 | 滑過 Roster 的 Agent | 3D 中亮出該 Agent 的部門光圈 |
 | 上方 KPI 列 | 點一下打開 Company Dashboard（`Esc` 關閉） |
+| View bar 的 **Auto** | 自動導播：開會、回報、Blocked、專案完成時自動切鏡頭；自己動鏡頭就關掉 |
 | 底部 View bar | Overview · Workspace · Director · Meeting Room · Lounge · Coffee Bar · Bathroom · City View |
 | `P` | 效能統計（FPS / draw calls / triangles） |
 | 右下 `?` | 顯示操作說明 |
@@ -89,6 +90,30 @@ npm run build && npm start   # production：單一 port http://localhost:8787 �
 右下 `?` 裡也有 **Reset company**：清空所有專案、任務與聊天，回到初始狀態。
 
 開發用：網址加上 `?nav`（例如 http://localhost:5173/?nav）會畫出走道導航圖（青色）、Agent 目的地支線（琥珀色）與貓的目的地（粉紅）。
+
+## Phase 6 內容：Polish
+
+![Auto camera on a desk report](docs/images/auto-camera.jpg)
+
+- **接上真正的 Claude**：
+  ```bash
+  LLM_PROVIDER=claude npm run dev
+  ```
+  - 需要 `ANTHROPIC_API_KEY`（或 `ant auth login`）。預設模型 Claude Opus 5.5，可用 `LLM_MODEL` 換。
+  - 每個 Agent 的每一次「思考」都是一次 Claude API 呼叫。Director 規劃工作流、Manager 拆子任務，都用 structured outputs 回傳資料，assignee 一定是真的同事；Employee 交出結果和自評 quality（影響分數）。
+  - 某一步失敗或被拒時，那一步改用 Mock 內容並註明，公司不會卡住。沒有憑證或憑證錯誤時，自動整場改用 Mock。
+  - 真實模型比 Mock 慢，一個專案大約數分鐘，也會產生 API 費用。
+- **自動導播**（View bar 的 **Auto**，預設開啟）：
+  - 開會時切到會議室、Employee 回報時切到主管桌、有人 Blocked 時給特寫、Manager 回報時切到 Director Office、專案完成時切到會議室看板；沒事時巡視各區。
+  - 拖曳、縮放、WASD、點視角或點 Agent 都會把鏡頭交還給你。
+- **後製**（`?` → Graphics）：High 有燈具光暈、MSAA 與暗角，Standard 是原本的畫面。畫面持續卡頓時會自動降到 Standard。
+- **辦公室細節**：
+  - 會議室玻璃上的 **Task Board** 即時顯示所有任務的便利貼（To do / In progress / Review / Done，完成的帶分數）。
+  - 浴室洗手台加上皂液瓶、毛巾托盤與擴香瓶。
+
+| | |
+| --- | --- |
+| ![Task board](docs/images/task-board.jpg) | ![Bathroom vanity](docs/images/bathroom-details.jpg) |
 
 ## Phase 5 內容：績效、Coins、Dashboard
 
@@ -290,7 +315,7 @@ Owner (You)
 │  ├─ shared/                 ✅ 型別、OfficeEvent、reduceEvent、組織 seed、座位、世界模型（導航圖、目的地、走路時間）、計分
 │  ├─ agent-runtime/          ✅ Director / Manager / Employee 行為（含 Demo 流程測試）
 │  ├─ task-engine/            ✅ 任務狀態機、建立專案 / 任務、roll-up
-│  └─ llm-provider/           ✅ LLMProvider 介面 + Mock provider（Claude / OpenAI 待加入）
+│  └─ llm-provider/           ✅ LLMProvider 介面 + Mock provider + Claude provider（OpenAI 待加入）
 ├─ assets/                    之後放 GLTF / texture（目前全部 procedural）
 ├─ prisma/                    ✅ SQLite schema（Prisma 7）
 └─ docs/
@@ -310,7 +335,7 @@ Owner (You)
 | State | Zustand |
 | Backend | Node.js 22, TypeScript（tsx）, Fastify 5, Server-Sent Events |
 | Database | SQLite + Prisma 7（better-sqlite3 driver adapter） |
-| AI | Provider abstraction：Mock（預設，已實作）、Claude / OpenAI（介面已定，待實作） |
+| AI | Provider abstraction：Mock（預設）、Claude（`@anthropic-ai/sdk`，structured outputs）；OpenAI 待實作 |
 
 ## 效能
 

@@ -59,5 +59,7 @@ export type AgentRunResult = {
 
 export interface LLMProvider {
   readonly name: string
+  /** The model behind it, when there is one. */
+  readonly model?: string
   runAgent(input: AgentRunInput): Promise<AgentRunResult>
 }

@@ -72,12 +72,14 @@
 - [x] Agent Panel 戰績、Task view 分數卡、Project Completed Toast 顯示發出的 Coins 與平均分數；Director 回報進度時也會提到
 - [x] 分數、Coins、performance 寫入 SQLite，重啟後保留
 
-### Phase 6 — Polish
+### Phase 6 — Polish ✅
 
-- [ ] 後製（AO / bloom，可開關）、更好的光影
-- [ ] 浴室與高級感細節、更多道具
-- [ ] Camera：會議時自動導播（跟隨模式已在 Phase 2 為貓實作，可直接用於 Agent）
-- [ ] Claude / OpenAI provider
+- [x] **Claude provider**（`LLM_PROVIDER=claude`）：每個 Agent 的思考都是一次 Claude API 呼叫，用 structured outputs 回傳計畫、子任務、結果與 quality；呼叫失敗或被拒時該步驟退回 Mock，憑證錯誤或連續失敗 3 次則整個 session 改用 Mock。以假 client 測試，不需要網路或 API key
+- [ ] OpenAI provider：沒有做（產品主體是 Claude；介面不變，之後加一個實作即可）
+- [x] **自動導播**（View bar 的 Auto，預設開啟）：開會切到會議室、Employee 回報切到主管桌、Blocked 切到該 Agent、Manager 回報切到 Director Office、專案完成切到會議室看板；閒置時巡視各區。自己動鏡頭就交還控制權
+- [x] **後製，可開關**（`?` → Graphics）：High = 燈具光暈（bloom）、MSAA、暗角；Standard = 原本的 renderer。畫面持續卡頓時自動降到 Standard 一次（使用者自己選過 High 就不降）
+  - AO（N8AO）試過後拿掉：它會抹掉 Agent 腳下的半透明接地陰影，效果比 AO 更差
+- [x] **辦公室細節**：會議室玻璃上的即時 Task Board（To do / In progress / Review / Done 便利貼，完成的貼紙帶分數）；浴室洗手台的皂液瓶、毛巾托盤、擴香瓶
 
 ## Demo Flow ✅
 

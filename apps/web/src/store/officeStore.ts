@@ -11,6 +11,7 @@ import {
 } from '@office/shared'
 import { create } from 'zustand'
 import { getAnchorPose } from '../agents/anchors'
+import { AutoDirector, pickCut, type Cut } from '../camera/autoDirector'
 import { api, streamEvents, type NewTaskInput } from '../net/api'
 import { CAMERA_PRESETS } from '../world/layout'
 
@@ -36,6 +37,20 @@ export type CatState = {
 
 export type Connection = 'connecting' | 'online' | 'offline'
 
+/** High = post-processing (AO, bloom, vignette); Standard = the plain renderer. */
+export type Graphics = 'high' | 'standard'
+const GRAPHICS_KEY = 'office.graphics'
+
+/** The viewer's saved choice, if they made one (storage can be unavailable). */
+function savedGraphics(): Graphics | null {
+  try {
+    const v = localStorage.getItem(GRAPHICS_KEY)
+    return v === 'high' || v === 'standard' ? v : null
+  } catch {
+    return null
+  }
+}
+
 export const CAT_ID = 'cat'
 export const DIRECTOR = 'director'
 
@@ -55,9 +70,12 @@ type OfficeState = CompanyState & {
   followId: string | null
   cameraShot: CameraShot | null
   activeView: string | null
+  /** Auto camera: cuts to meetings, reports and results. Any manual camera move turns it off. */
+  autoCam: boolean
   introDone: boolean
   showStats: boolean
   dashboardOpen: boolean
+  graphics: Graphics
   stats: RenderStats
   effects: FloatEffect[]
   toasts: Toast[]
@@ -88,10 +106,14 @@ type OfficeState = CompanyState & {
   openChat: (thread?: string) => void
   setChatOpen: (open: boolean) => void
   goToPreset: (id: string) => void
+  setAutoCam: (on: boolean) => void
   finishIntro: () => void
   clearActiveView: () => void
   toggleStats: () => void
   setDashboardOpen: (open: boolean) => void
+  setGraphics: (graphics: Graphics) => void
+  /** Called when the frame rate stays low: drops to Standard once, unless the viewer chose High. */
+  lowerGraphics: () => void
   setStats: (stats: RenderStats) => void
   setCat: (patch: Partial<CatState>) => void
   petCat: () => void
@@ -132,6 +154,24 @@ const company = (s: CompanyState): CompanyState => ({
 })
 
 export const useOfficeStore = create<OfficeState>((set, get) => {
+  /** Camera moves made by the auto camera; the public actions below are the user's and turn it off. */
+  const director = new AutoDirector((cut: Cut) => {
+    if (!get().introDone) return
+    if (cut.kind === 'preset') {
+      const p = CAMERA_PRESETS.find((c) => c.id === cut.id)
+      if (p) set({ cameraShot: { position: p.position, target: p.target, nonce: ++nonce }, activeView: p.id, followId: null })
+    } else if (cut.kind === 'agent') {
+      const agent = get().agents.find((a) => a.id === cut.id)
+      if (agent) set({ cameraShot: agentShot(agent), activeView: `agent:${agent.id}`, followId: null })
+    } else {
+      set({ cameraShot: { position: cut.position, target: cut.target, nonce: ++nonce }, activeView: cut.view, followId: null })
+    }
+  })
+  director.start()
+  /** The user took the camera. */
+  const manual = () => {
+    if (get().autoCam) get().setAutoCam(false)
+  }
   const spawnEffect = (anchorId: string, text: string, kind: FloatEffect['kind']) => {
     const slot = get().effects.filter((e) => e.anchorId === anchorId).length
     const effect = { id: ++effectId, anchorId, text, kind, slot }
@@ -180,9 +220,11 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
     followId: null,
     cameraShot: null,
     activeView: null,
+    autoCam: true,
     introDone: false,
     showStats: false,
     dashboardOpen: false,
+    graphics: savedGraphics() ?? 'high',
     stats: { fps: 0, calls: 0, triangles: 0 },
     effects: [],
     toasts: [],
@@ -219,6 +261,7 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
     applyEvent: (event) => {
       set((s) => company(reduceEvent(s, event)))
       const s = get()
+      if (s.autoCam) director.consider(pickCut(event, s))
       switch (event.type) {
         case 'AGENT_REWARDED': {
           const cheer = () => {
@@ -274,27 +317,50 @@ export const useOfficeStore = create<OfficeState>((set, get) => {
     select: (id) => set({ selectedId: id, viewTaskId: null }),
     viewTask: (taskId) => set({ viewTaskId: taskId }),
     focusAgent: (id) => {
+      manual()
       const agent = get().agents.find((a) => a.id === id)
       if (agent) {
         set({ cameraShot: agentShot(agent), activeView: `agent:${id}`, selectedId: id, viewTaskId: null, followId: null })
       }
     },
-    follow: (id) => set({ followId: id, activeView: id ? `follow:${id}` : null }),
+    follow: (id) => {
+      if (id) manual()
+      set({ followId: id, activeView: id ? `follow:${id}` : null })
+    },
     openChat: (thread = DIRECTOR) =>
       set((s) => ({ chatOpen: true, chatThread: thread, unread: { ...s.unread, [thread]: 0 } })),
     setChatOpen: (open) =>
       set((s) => ({ chatOpen: open, unread: open ? { ...s.unread, [s.chatThread]: 0 } : s.unread })),
     goToPreset: (id) => {
+      manual()
       const p = CAMERA_PRESETS.find((c) => c.id === id)
       if (p) {
         set({ cameraShot: { position: p.position, target: p.target, nonce: ++nonce }, activeView: id, followId: null })
       }
     },
     // The fly-in ends on the overview, unless a shot interrupted it (that view stays highlighted).
+    setAutoCam: (on) => {
+      if (on) director.start()
+      else director.stop()
+      set({ autoCam: on })
+    },
     finishIntro: () => set((s) => ({ introDone: true, activeView: s.activeView ?? 'overview' })),
     clearActiveView: () => set((s) => ({ activeView: s.followId ? s.activeView : null })),
     toggleStats: () => set((s) => ({ showStats: !s.showStats })),
     setDashboardOpen: (open) => set({ dashboardOpen: open }),
+    setGraphics: (graphics) => {
+      try {
+        localStorage.setItem(GRAPHICS_KEY, graphics)
+      } catch {
+        // Not saved; still applies for this visit.
+      }
+      set({ graphics })
+    },
+    lowerGraphics: () => {
+      if (get().graphics !== 'high' || savedGraphics() === 'high') return
+      set({ graphics: 'standard' })
+      pushToast({ kind: 'info', title: 'Graphics set to Standard', body: 'to keep the frame rate smooth. Switch back under ? → Graphics.' })
+    },
     setStats: (stats) => set({ stats }),
     setCat: (patch) => set((s) => ({ cat: { ...s.cat, ...patch } })),
     petCat: () => {

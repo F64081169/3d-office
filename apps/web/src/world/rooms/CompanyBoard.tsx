@@ -1,8 +1,8 @@
 import { companyStats, projectStats, type CompanyState } from '@office/shared'
-import { useEffect, useMemo } from 'react'
-import * as THREE from 'three'
+import { useMemo } from 'react'
 import { DEPT_COLOR } from '../../agents/status'
 import { GEO } from '../../assets/primitives'
+import { fitText as fit, useLiveTexture } from '../../assets/liveTexture'
 import { FONT } from '../../assets/textures'
 import { useOfficeStore } from '../../store/officeStore'
 
@@ -41,13 +41,6 @@ function boardData(s: CompanyState) {
 }
 
 type Board = ReturnType<typeof boardData>
-
-const fit = (ctx: CanvasRenderingContext2D, text: string, width: number) => {
-  if (ctx.measureText(text).width <= width) return text
-  let t = text
-  while (t.length > 1 && ctx.measureText(`${t}…`).width > width) t = t.slice(0, -1)
-  return `${t}…`
-}
 
 function draw(ctx: CanvasRenderingContext2D, { st, project, board, recent }: Board) {
   ctx.fillStyle = C.bg
@@ -166,23 +159,8 @@ export function CompanyBoardScreen(props: { scale: [number, number, number]; pos
   const agents = useOfficeStore((s) => s.agents)
   const tasks = useOfficeStore((s) => s.tasks)
   const projects = useOfficeStore((s) => s.projects)
-  const texture = useMemo(() => {
-    const canvas = document.createElement('canvas')
-    canvas.width = W
-    canvas.height = H
-    const tex = new THREE.CanvasTexture(canvas)
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.anisotropy = 8
-    return tex
-  }, [])
   const data = useMemo(() => boardData({ agents, tasks, projects, messages: [] }), [agents, tasks, projects])
-  const key = JSON.stringify(data)
-
-  useEffect(() => {
-    draw((texture.image as HTMLCanvasElement).getContext('2d')!, JSON.parse(key) as Board)
-    texture.needsUpdate = true
-  }, [key, texture])
-  useEffect(() => () => texture.dispose(), [texture])
+  const texture = useLiveTexture(W, H, data, draw)
 
   return (
     <mesh geometry={GEO.plane} scale={props.scale} position={props.position}>

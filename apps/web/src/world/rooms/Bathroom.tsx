@@ -186,6 +186,7 @@ export function Bathroom() {
       {[-2.2, 0, 2.2].map((dx) => (
         <VesselSink key={dx} x={VANITY.x + dx} />
       ))}
+      <mesh geometry={vanityAccessories()} material={MAT.decor} position={[VANITY.x, 0.88, vanityZ]} castShadow />
 
       {/* Large mirror with backlit halo */}
       <mesh
@@ -243,3 +244,35 @@ const towelGeometry = () =>
       true,
     ),
   )
+
+/**
+ * Small things on the vanity, merged into one mesh: an amber soap pump beside each
+ * sink, a walnut tray of rolled hand towels and a reed diffuser between the sinks.
+ */
+const vanityAccessories = () =>
+  cached('vanity-accessories', () => {
+    const parts: Parameters<typeof mergeParts>[0] = []
+    for (const dx of [-2.2, 0, 2.2]) {
+      const x = dx + 0.42
+      parts.push(
+        { geo: GEO.cylinder, at: [x, 0.08, -0.12], scale: [0.035, 0.16, 0.035], color: '#7a4a1e' },
+        { geo: GEO.cylinder, at: [x, 0.18, -0.12], scale: [0.011, 0.04, 0.011], color: '#c9a24d' },
+        { geo: GEO.box, at: [x - 0.025, 0.2, -0.12], scale: [0.05, 0.012, 0.014], color: '#c9a24d' },
+      )
+    }
+    parts.push({ geo: GEO.box, at: [-1.05, 0.012, -0.05], scale: [0.42, 0.024, 0.28], color: '#6e4a33' })
+    for (let i = 0; i < 3; i++) {
+      parts.push({ geo: GEO.cylinder, at: [-1.05, 0.064, -0.14 + i * 0.09], rot: [0, 0, Math.PI / 2], scale: [0.04, 0.34, 0.04], color: '#f4f1ea' })
+    }
+    parts.push(
+      { geo: GEO.cylinder, at: [1.25, 0.06, -0.1], scale: [0.045, 0.12, 0.045], color: '#3d4a44' },
+      ...[-0.5, -0.18, 0.15, 0.45].map((tilt, i) => ({
+        geo: GEO.cylinder,
+        at: [1.25 + tilt * 0.08, 0.26, -0.1 + (i % 2 ? 0.02 : -0.02)] as [number, number, number],
+        rot: [0, 0, tilt * 0.35] as [number, number, number],
+        scale: [0.003, 0.3, 0.003] as [number, number, number],
+        color: '#2b2118',
+      })),
+    )
+    return mergeParts(parts, true)
+  })

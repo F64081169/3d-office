@@ -2,7 +2,7 @@ import { placeFor, type Agent, type AgentStatus } from '@office/shared'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { blobShadowTexture } from '../assets/textures'
+import { blobMaterial } from '../assets/materials'
 import { useOfficeStore } from '../store/officeStore'
 import { registerTagAnchor } from './anchors'
 import { APPEARANCE, DEFAULT_APPEARANCE } from './appearance'
@@ -33,7 +33,6 @@ const G = {
 const eyeMat = new THREE.MeshStandardMaterial({ color: '#1d1d1f', roughness: 0.3 })
 const lensMat = new THREE.MeshStandardMaterial({ color: '#202124', metalness: 0.6, roughness: 0.3 })
 const cupMat = new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.25 })
-const blobMat = new THREE.MeshBasicMaterial({ map: blobShadowTexture(), transparent: true, depthWrite: false })
 
 /** Hip pivot height standing vs seated on a 0.49m chair. */
 const HIP = { stand: 0.86, sit: 0.5 }
@@ -195,7 +194,7 @@ export function AgentAvatar({ agent }: { agent: Agent }) {
 
   return (
     <group ref={root} onPointerOver={onOver} onPointerOut={onOut} onClick={onClick}>
-      <mesh ref={blob} geometry={G.blob} material={blobMat} rotation-x={-Math.PI / 2} position-y={0.012} />
+      <mesh ref={blob} geometry={G.blob} material={blobMaterial()} rotation-x={-Math.PI / 2} position-y={0.012} />
       <mesh ref={ringMesh} geometry={G.ring} material={mats.ring} rotation-x={-Math.PI / 2} position-y={0.02} />
       <mesh ref={alertMesh} geometry={G.alert} material={mats.alert} rotation-x={-Math.PI / 2} position-y={0.022} />
 

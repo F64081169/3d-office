@@ -8,6 +8,7 @@ import { ChatPanel } from './ChatPanel'
 import { Dashboard, Pulse } from './Dashboard'
 import { SidePanel } from './SidePanel'
 import { StatusBadge } from './StatusBadge'
+import { CameraIcon } from './icons'
 import { Toasts } from './Toasts'
 
 export function Hud() {
@@ -62,7 +63,7 @@ function Brand() {
         <div className="brand__title">Claude Office</div>
         <div className="brand__subtitle">AI Agent Company Simulator</div>
       </div>
-      <span className="chip">MVP · Phase 5</span>
+      <span className="chip">MVP · Phase 6</span>
     </header>
   )
 }
@@ -127,9 +128,19 @@ function RosterRow({ agent, depth }: { agent: Agent; depth: number }) {
 function ViewBar() {
   const active = useOfficeStore((s) => s.activeView)
   const goToPreset = useOfficeStore((s) => s.goToPreset)
+  const autoCam = useOfficeStore((s) => s.autoCam)
+  const setAutoCam = useOfficeStore((s) => s.setAutoCam)
   return (
     <div className="viewbar-wrap">
       <nav className="panel viewbar">
+        <button
+          className={`viewbar__auto ${autoCam ? 'is-on' : ''}`}
+          onClick={() => setAutoCam(!autoCam)}
+          aria-pressed={autoCam}
+          title="Auto camera: cuts to meetings, reports and results. Moving the camera yourself turns it off."
+        >
+          <CameraIcon size={13} /> Auto
+        </button>
         {CAMERA_PRESETS.map((p) => (
           <button key={p.id} className={active === p.id ? 'is-active' : ''} onClick={() => goToPreset(p.id)}>
             {p.label}
@@ -144,6 +155,8 @@ function Help() {
   const toggleStats = useOfficeStore((s) => s.toggleStats)
   const resetCompany = useOfficeStore((s) => s.resetCompany)
   const provider = useOfficeStore((s) => s.provider)
+  const graphics = useOfficeStore((s) => s.graphics)
+  const setGraphics = useOfficeStore((s) => s.setGraphics)
   const [open, setOpen] = useState(false)
   return (
     <div className="help-wrap">
@@ -172,6 +185,14 @@ function Help() {
             >
               Reset company
             </button>
+          </div>
+          <div className="help__row help__graphics">
+            Graphics
+            {(['high', 'standard'] as const).map((g) => (
+              <button key={g} className={`chip-btn ${graphics === g ? 'is-active' : ''}`} onClick={() => setGraphics(g)}>
+                {g === 'high' ? 'High · AO + bloom' : 'Standard'}
+              </button>
+            ))}
           </div>
           <div className="help__meta">LLM provider: {provider}</div>
         </aside>

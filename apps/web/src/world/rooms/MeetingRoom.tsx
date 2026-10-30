@@ -5,6 +5,7 @@ import { glowTexture } from '../../assets/textures'
 import { GlassWall } from '../Building'
 import { CEILING_H, MEETING_DOOR, MEETING_SEATS, MEETING_TABLE, ZONES } from '../layout'
 import { CompanyBoardScreen } from './CompanyBoard'
+import { TaskBoard } from './TaskBoard'
 import { HangingSign } from './Workspace'
 import * as THREE from 'three'
 
@@ -19,6 +20,7 @@ export function MeetingRoom() {
       <GlassWall axis="x" at={Z.maxZ} from={Z.minX + 0.08} to={Z.maxX} spacing={1.25} gaps={[MEETING_DOOR]} />
       <GlassWall axis="z" at={Z.maxX} from={Z.minZ} to={Z.maxZ} spacing={1.25} />
       <HangingSign title="MEETING" subtitle="BOARD ROOM" accent="#3b9fd8" position={[-6.5, 2.75, -5.85]} width={1.8} />
+      <TaskBoard />
 
       {/* Racetrack table */}
       <group position={[T.x, 0, T.z]}>

@@ -90,6 +90,8 @@ export function CameraRig() {
     const c = controls.current
     if (!c) return
     const onStart = () => {
+      // The user grabbed the camera: the auto camera hands over.
+      useOfficeStore.getState().setAutoCam(false)
       const f = flight.current
       if (!f) return clearActiveView()
       if (f.intro) {
@@ -155,6 +157,7 @@ export function CameraRig() {
     c.target.y = THREE.MathUtils.clamp(c.target.y, 0, 10)
     camera.position.y = Math.max(camera.position.y, 0.6)
     if (followed) follow(null)
+    if (useOfficeStore.getState().autoCam) useOfficeStore.getState().setAutoCam(false)
     clearActiveView()
   })
 

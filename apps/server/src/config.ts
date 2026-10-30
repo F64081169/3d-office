@@ -7,6 +7,8 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL ?? 'file:./office.db',
   /** mock (default) · claude · openai — only mock exists in the MVP. */
   provider: process.env.LLM_PROVIDER ?? 'mock',
+  /** Claude model id for LLM_PROVIDER=claude (defaults to Claude Opus 5.5). */
+  model: process.env.LLM_MODEL || undefined,
   /** Simulation speed multiplier for both thinking time and walking/meeting pauses. */
   speed: num(process.env.SIM_SPEED, 1),
   /** Chance that a non-demo task blocks on its first attempt (Mock provider). */

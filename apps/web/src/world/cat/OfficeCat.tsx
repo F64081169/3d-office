@@ -1,7 +1,7 @@
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { blobShadowTexture } from '../../assets/textures'
+import { blobMaterial } from '../../assets/materials'
 import { registerTagAnchor } from '../../agents/anchors'
 import { CAT_ID, useOfficeStore, type CatActivity } from '../../store/officeStore'
 import { mulberry32 } from '../../util/random'
@@ -36,7 +36,6 @@ const M = {
   cream: new THREE.MeshStandardMaterial({ color: '#f6ecdf', roughness: 0.9 }),
   nose: new THREE.MeshStandardMaterial({ color: '#e59a9a', roughness: 0.6 }),
   eye: new THREE.MeshStandardMaterial({ color: '#23301f', roughness: 0.2 }),
-  blob: new THREE.MeshBasicMaterial({ map: blobShadowTexture(), transparent: true, depthWrite: false }),
   ring: new THREE.MeshBasicMaterial({ color: CAT_COLOR, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }),
 }
 
@@ -249,7 +248,7 @@ export function OfficeCat() {
   return (
     <group ref={root} onPointerOver={onOver} onPointerOut={onOut} onClick={onClick}>
       <group scale={SCALE}>
-        <mesh geometry={G.blob} material={M.blob} rotation-x={-Math.PI / 2} position-y={0.01} scale={[0.32, 0.48, 1]} />
+        <mesh geometry={G.blob} material={blobMaterial()} rotation-x={-Math.PI / 2} position-y={0.01} scale={[0.32, 0.48, 1]} />
         <mesh ref={ring} geometry={G.ring} material={M.ring} rotation-x={-Math.PI / 2} position-y={0.015} />
         <group ref={pelvis}>
           <group ref={spine}>

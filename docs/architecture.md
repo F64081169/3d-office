@@ -31,7 +31,7 @@ flowchart LR
     CO["Company<br/>state + event pipeline"]
     RT["Agent Runtime<br/>packages/agent-runtime"]
     TE["Task Engine<br/>packages/task-engine"]
-    LLM["LLM Provider<br/>Mock ✅ · Claude / OpenAI 🔜"]
+    LLM["LLM Provider<br/>Mock ✅ · Claude ✅ · OpenAI 🔜"]
     DB[("SQLite<br/>Prisma 7")]
     API --> RT
     RT --> TE
@@ -59,7 +59,7 @@ flowchart LR
 | Backend API + SSE | `apps/server` | ✅ Phase 3 |
 | Task Engine | `packages/task-engine` | ✅ Phase 3 |
 | Agent Runtime | `packages/agent-runtime` | ✅ Phase 3 |
-| LLM Provider | `packages/llm-provider` | ✅ Mock（P3）；Claude / OpenAI 🔜 |
+| LLM Provider | `packages/llm-provider` | ✅ Mock（P3）、Claude（P6）；OpenAI 🔜 |
 | Event Bus | server `Company` + SSE + 前端 `applyEvent` | ✅ Phase 3（原訂 P4，提前：沒有它無法看到委派過程） |
 | Database | `prisma/schema.prisma` + `apps/server/src/db.ts` | ✅ Phase 3 |
 | World model（導航圖、目的地、走路時間） | `packages/shared/src/world.ts` | ✅ P2 建立（貓）；P4 移到 shared，前端走動與 runtime 計時共用 |
@@ -220,6 +220,32 @@ interface AssetProvider {
 
 `world/rooms/CompanyBoard.tsx`：會議室大螢幕是一張 1024×576 的 canvas texture，內容和 HUD 的 Dashboard 用同一組 shared 函式（`companyStats` / `projectStats`）計算：4 個 KPI、9 人 performance 長條、目前專案進度與最近發出的 Coins。只有在畫面上的數字改變時才重畫並上傳 texture。
 
+### 3.4.3 自動導播（Phase 6）
+
+`camera/autoDirector.ts`：store 每套用一個事件就問 `pickCut(event, state)` 這個事件值不值得看，`AutoDirector` 決定要不要切：
+
+| 事件 | 鏡頭 | 優先度 | 停留 |
+| --- | --- | --- | --- |
+| Director → `meeting`（kickoff） | Meeting Room | 2 | 9 s |
+| 任何人 → `blocked` | 該 Agent 特寫 | 2 | 7 s |
+| Employee → `reporting` | 主管桌側面，看團隊排隊回報 | 1 | 6 s |
+| Manager / Director → `reporting` | Director Office | 1 | 7 s |
+| `PROJECT_COMPLETED` | Meeting Room（看板上的 payout） | 3 | 10 s |
+| 20 秒沒有切換 | 巡視 Overview → Workspace → Lounge → Meeting → Coffee → Director | 0 | 4 s |
+
+- 停留期間只有更高優先度的事件能插播；較低的會排隊，停留結束後播最新的那一個。
+- 預設開啟。使用者拖曳 / 縮放、WASD、點視角或點 Agent 都會關掉它（View bar 的 Auto 按鈕可再打開），所以不會跟使用者搶鏡頭。
+
+### 3.4.4 後製與辦公室細節（Phase 6）
+
+- **Graphics**（`world/PostFX.tsx`，`?` → Graphics，存在 localStorage）：
+  - High：`@react-three/postprocessing` 的 EffectComposer（MSAA 4×）→ Bloom（只抓 HDR > 1.6 的部分）→ ACES tone mapping → 暗角。Composer 會關掉 renderer 自己的 tone mapping，所以 ACES 移到最後一步。
+  - 開 High 時燈具（吊燈玻璃球、燈條、立燈燈罩）亮度提高到 1 以上讓 bloom 抓得到；接地陰影加深，因為 composer 在線性色彩空間混色，同樣的透明度看起來淡很多（`assets/materials.ts › setPostProcessing`）。
+  - 試過 N8AO（screen-space AO），它會把 Agent 腳下的半透明接地陰影抹掉，所以拿掉。
+  - drei `PerformanceMonitor` 偵測到持續低於 40 FPS 時降到 Standard 一次並跳出提示；使用者自己選過 High 就不會降。
+- **Task Board**（`world/rooms/TaskBoard.tsx`）：掛在會議室朝向工作區的玻璃上，4 欄（To do / In progress / Review / Done），便利貼顏色依部門，Blocked 加紅框，完成的貼紙帶分數。和會議室大螢幕一樣用 `useLiveTexture`，資料變了才重畫。
+- **浴室洗手台**：每個水槽旁一瓶琥珀色皂液瓶（黃銅壓頭）、胡桃木托盤上的捲毛巾、擴香瓶。合併成一個 mesh，不增加 draw call 數量級。
+
 ### 3.5 效能策略（目標：桌機 Chrome 約 60 FPS）
 
 | 手段 | 位置 |
@@ -231,7 +257,9 @@ interface AssetProvider {
 | 共用 material / geometry / texture 單例 | `assets/materials.ts`, `primitives.tsx` |
 | 天花板在相機高於屋頂時自動隱藏（dollhouse） | `Building.tsx › CeilingGroup` |
 | 真鏡面反射只在相機進入浴室時啟用，其他時候用 env-map 替身 | `Bathroom.tsx › Mirror` |
-| `dpr` 上限 1.75；不用 transmission / postprocessing | `App.tsx` |
+| `dpr` 上限 1.75；不用 transmission | `App.tsx` |
+| 後製可關：Standard 完全不經過 composer；High 只有 bloom + 暗角（一次全螢幕 pass），畫面持續卡頓時自動降回 Standard | `world/PostFX.tsx` |
+| 牆上看板是 canvas texture，數字改變才重畫 | `assets/liveTexture.ts` |
 
 實測（Phase 1，overview 全景）：約 **620 draw calls / 310k triangles**；室內視角約 40–300 draw calls。可按 `P` 隨時查看。
 
@@ -260,7 +288,8 @@ Node 22 + TypeScript（以 `tsx` 執行，不需 build）+ Fastify 5。
 | --- | --- | --- |
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | 監聽位址 |
 | `DATABASE_URL` | `file:./office.db` | SQLite 檔（相對 `apps/server`） |
-| `LLM_PROVIDER` | `mock` | `claude` / `openai` 尚未實作，會退回 Mock 並警告 |
+| `LLM_PROVIDER` | `mock` | `claude` = Claude API（需要 `ANTHROPIC_API_KEY` 或 `ant auth login`）；`openai` 尚未實作，會退回 Mock 並警告 |
+| `LLM_MODEL` | `claude-opus-5-5` | `LLM_PROVIDER=claude` 時使用的模型 |
 | `SIM_SPEED` | `1` | 模擬速度倍率（思考時間與走路 / 開會停頓都會縮短） |
 | `MOCK_BLOCK_RATE` | `0.1` | 非 Demo 任務第一次執行時遇到 Blocked 的機率 |
 | `AMBIENT` | `1` | `0` = 關閉閒置 Agent 自動去休息 |
@@ -493,7 +522,16 @@ type AgentRunResult = {
   - Demo 題目（含 "random write"）使用手寫的完整內容：3 個工作流、6 個子任務、各自的技術結果、Manager review 與 Director 最終報告。Kenji 第一次執行會刻意遇到 Blocked。
   - 其他題目使用以主題為基礎的通用模板。
   - `quality`：Demo 是寫好的（Alex 0.95、Mina 0.8 …），其他題目是 0.72–0.97 之間的固定雜湊值。
-- **Claude / OpenAI**：介面已固定，只需新增一個實作並在 `createProvider` 註冊（`LLM_PROVIDER=claude`）。
+- **ClaudeProvider**（`LLM_PROVIDER=claude`，`packages/llm-provider/src/claude.ts`）：
+  - `@anthropic-ai/sdk`，預設模型 Claude Opus 5.5（`LLM_MODEL` 可換）。每次思考是一次 Messages 呼叫，system prompt 交代公司、角色與技能。
+  - plan / split / execute / review / summarize 用 **structured outputs**（`betaZodOutputFormat` + zod schema），回傳的是資料而不是要解析的文字：專案標題、工作流與子任務（assignee、priority）、結果與 `blocked`、`quality`。Assignee 與 priority 在程式裡再檢查一次，一個錯的 id 只丟掉那一項。
+  - 依 mode 設定 effort：plan / execute / summarize 用 `medium`，split / review / chat 用 `low`。
+  - `prepare` 不呼叫 API：runtime 只把它當成思考時間，結果沒有用到。
+  - 開啟 server-side fallback（`fallbacks: "default"`），被安全分類器拒絕時由 API 自動改用建議的模型重試。
+  - 失敗處理：SDK 自己會重試（3 次，單次逾時 120 s）；仍失敗或被拒時，那一步改用 Mock 的內容並在文字裡註明。憑證被拒（401 / 403）或連續失敗 3 次（例如完全沒有憑證）時，之後整個 session 都用 Mock，只記一次 log。
+  - 測試（`packages/llm-provider/test/claude.test.ts`）用假 client，不需要網路或 API key：request 參數、assignee 過濾、blocked 只在第一次、quality 夾在 0–1、被拒與錯誤的退回、憑證錯誤後不再呼叫。
+  - 注意：真實模型的延遲比 Mock 長，`SIM_SPEED` 只會加快停頓與走路，不會加快模型。
+- **OpenAI**：沒有實作；介面不變，之後加一個實作並在 `createProvider` 註冊即可。
 
 ## 9. Repository 結構與取捨
 

@@ -1997,3 +1997,28 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------- Phase 6: auto camera toggle ---------- */
+
+.viewbar .viewbar__auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 4px;
+  border: 1px solid rgba(29, 35, 43, 0.12);
+}
+
+.viewbar .viewbar__auto.is-on {
+  color: #fff;
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.viewbar .viewbar__auto.is-on:hover {
+  background: #c4654a;
+}
+
+.help__graphics {
+  align-items: center;
+  gap: 6px;
+}

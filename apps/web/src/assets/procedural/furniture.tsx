@@ -243,13 +243,6 @@ export function Rug({ width, depth, color = '#d9cfc0', border = '#b9ab97', ...pr
   )
 }
 
-const shadeMaterial = new THREE.MeshStandardMaterial({
-  color: '#f3e7d3',
-  emissive: '#ffd8a0',
-  emissiveIntensity: 0.55,
-  roughness: 1,
-  side: THREE.DoubleSide,
-})
 const shadeGeometry = new THREE.CylinderGeometry(0.2, 0.24, 0.3, 28, 1, true)
 
 export function FloorLamp(props: LampProps) {
@@ -257,7 +250,7 @@ export function FloorLamp(props: LampProps) {
     <group {...props}>
       <Cylinder r={0.17} h={0.04} position={[0, 0.02, 0]} material={MAT.marble} />
       <Cylinder r={0.012} h={1.42} position={[0, 0.72, 0]} material={MAT.brass} />
-      <mesh geometry={shadeGeometry} material={shadeMaterial} position={[0, 1.5, 0]} />
+      <mesh geometry={shadeGeometry} material={MAT.lampShade} position={[0, 1.5, 0]} />
     </group>
   )
 }

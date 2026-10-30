@@ -9,6 +9,7 @@ import { OfficeCat } from './cat/OfficeCat'
 import { Exterior, FOG } from './Exterior'
 import { Lighting } from './Lighting'
 import { NavDebug, SHOW_NAV } from './NavDebug'
+import { PostFX } from './PostFX'
 import { Bathroom } from './rooms/Bathroom'
 import { CoffeeBar } from './rooms/CoffeeBar'
 import { DirectorOffice } from './rooms/DirectorOffice'
@@ -38,6 +39,7 @@ export function OfficeScene() {
       <TagProjector />
       <CameraRig />
       <StatsProbe />
+      <PostFX />
     </>
   )
 }

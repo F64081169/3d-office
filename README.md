@@ -11,11 +11,11 @@
 | Phase | 內容 | 狀態 |
 | --- | --- | --- |
 | 1 | Project setup · 3D scene · Office layout · Static agents | ✅ 完成 |
-| 2 | Agent data · Click UI · Status UI | ⏭️ 下一步 |
-| 3 | Task engine · Director delegation · Mock Agent Provider | 🔜 |
-| 4 | Movement · Event system | 🔜 |
-| 5 | Performance · Coins · Dashboard | 🔜 |
-| 6 | Polish · Premium office · Lighting · Camera | 🔜 |
+| 2 | Agent data · Click UI · Status UI（＋辦公室貓 Mochi） | ✅ 完成 |
+| 3 | Task engine · Director delegation · Mock Agent Provider（＋Event stream、SQLite） | ✅ 完成 |
+| 4 | Movement（Event system 已在 Phase 3 完成） | ✅ 完成 |
+| 5 | Performance · Coins · Dashboard | ✅ 完成 |
+| 6 | Polish：Claude provider · 自動導播 · 後製 · 辦公室細節 | ✅ 完成 |
 
 詳細清單見 [docs/mvp.md](docs/mvp.md)。
 
@@ -33,13 +33,38 @@ npm run dev
 
 打開 http://localhost:5173 。
 
+`npm run dev` 會同時啟動兩個服務：
+
+- **server**：Fastify API + 事件串流，`:8787`。啟動前會自動 `prisma generate && prisma db push`，第一次會建立 `apps/server/office.db`。
+- **web**：Vite，`:5173`，`/api` 會 proxy 到 server。
+
+不需要任何 API key：預設使用 Mock LLM provider。
+
+在 Director Chat 點建議的 Demo 題目，或輸入：
+
+> Analyze random write performance bottleneck and propose improvements.
+
+約 2 分鐘後 Director 會交回最終報告（包含大家走去開會、回報的時間）。想看快一點：
+
+```bash
+SIM_SPEED=2 npm run dev
+```
+
 其他指令：
 
 ```bash
-npm run typecheck   # 全部 workspace 型別檢查
-npm run build       # production build → apps/web/dist
-npm run preview     # 預覽 production build
+npm test            # 以 40 倍速跑完整 Demo 流程（含計分與發幣）＋ 計分公式、路徑不碰家具檢查（shared）
 ```
+
+```bash
+npm run typecheck   # 全部 workspace 型別檢查
+```
+
+```bash
+npm run build && npm start   # production：單一 port http://localhost:8787 同時提供 API 與前端
+```
+
+環境變數（全部可選）：`SIM_SPEED`（模擬倍速）、`AMBIENT=0`（關閉閒置 Agent 自動去休息）、`LLM_PROVIDER`（`mock` / `claude`）、`LLM_MODEL`、`MOCK_BLOCK_RATE`、`PORT`、`DATABASE_URL`，說明見 [architecture.md §4](docs/architecture.md)。
 
 ## 操作
 
@@ -50,12 +75,193 @@ npm run preview     # 預覽 production build
 | 滾輪 | 縮放 |
 | `W` `A` `S` `D` / 方向鍵 | 移動視角 |
 | `Q` / `E` | 下降 / 上升 |
-| 點擊 3D 中的 Agent，或左側 Roster | 鏡頭飛到該 Agent |
+| 點擊 3D 中的 Agent，或左側 Roster | 鏡頭飛到該 Agent，右側打開 Agent Panel |
+| 點擊 3D 中的貓 | 打開 Mochi 的資訊卡（Pet / Follow） |
+| 點擊空白處 / `Esc` | 關閉 Panel、停止跟隨 |
 | 滑過 Roster 的 Agent | 3D 中亮出該 Agent 的部門光圈 |
+| 上方 KPI 列 | 點一下打開 Company Dashboard（`Esc` 關閉） |
+| View bar 的 **Auto** | 自動導播：開會、回報、Blocked、專案完成時自動切鏡頭；自己動鏡頭就關掉 |
 | 底部 View bar | Overview · Workspace · Director · Meeting Room · Lounge · Coffee Bar · Bathroom · City View |
 | `P` | 效能統計（FPS / draw calls / triangles） |
+| 右下 `?` | 顯示操作說明 |
 
 開場會有一段鏡頭從城市上空飛進辦公室的動畫，點擊或拖曳可略過。
+
+右下 `?` 裡也有 **Reset company**：清空所有專案、任務與聊天，回到初始狀態。
+
+開發用：網址加上 `?nav`（例如 http://localhost:5173/?nav）會畫出走道導航圖（青色）、Agent 目的地支線（琥珀色）與貓的目的地（粉紅）。
+
+## Phase 6 內容：Polish
+
+![Auto camera on a desk report](docs/images/auto-camera.jpg)
+
+- **接上真正的 Claude**：
+  ```bash
+  LLM_PROVIDER=claude npm run dev
+  ```
+  - 需要 `ANTHROPIC_API_KEY`（或 `ant auth login`）。預設模型 Claude Opus 5.5，可用 `LLM_MODEL` 換。
+  - 每個 Agent 的每一次「思考」都是一次 Claude API 呼叫。Director 規劃工作流、Manager 拆子任務，都用 structured outputs 回傳資料，assignee 一定是真的同事；Employee 交出結果和自評 quality（影響分數）。
+  - 某一步失敗或被拒時，那一步改用 Mock 內容並註明，公司不會卡住。沒有憑證或憑證錯誤時，自動整場改用 Mock。
+  - 真實模型比 Mock 慢，一個專案大約數分鐘，也會產生 API 費用。
+- **自動導播**（View bar 的 **Auto**，預設開啟）：
+  - 開會時切到會議室、Employee 回報時切到主管桌、有人 Blocked 時給特寫、Manager 回報時切到 Director Office、專案完成時切到會議室看板；沒事時巡視各區。
+  - 拖曳、縮放、WASD、點視角或點 Agent 都會把鏡頭交還給你。
+- **後製**（`?` → Graphics）：High 有燈具光暈、MSAA 與暗角，Standard 是原本的畫面。畫面持續卡頓時會自動降到 Standard。
+- **辦公室細節**：
+  - 會議室玻璃上的 **Task Board** 即時顯示所有任務的便利貼（To do / In progress / Review / Done，完成的帶分數）。
+  - 浴室洗手台加上皂液瓶、毛巾托盤與擴香瓶。
+
+| | |
+| --- | --- |
+| ![Task board](docs/images/task-board.jpg) | ![Bathroom vanity](docs/images/bathroom-details.jpg) |
+
+## Phase 5 內容：績效、Coins、Dashboard
+
+![Company Dashboard](docs/images/dashboard.jpg)
+
+每個任務完成時都會**計分並發 Coins**，Owner 從畫面上就看得出誰做得好：
+
+```
+Score = 50 + Quality (0–20) + Speed (0–10) + Difficulty (0–10) + Review (0–10)
+Performance = 80% 原本的 performance + 20% 這次的分數
+Coins：Normal 100 · Hard 200 · Critical 500
+```
+
+- **Quality**：provider 對結果的評分。
+- **Speed**：實際花的時間和預估相比。
+- **Difficulty**：依 priority。
+- **Review**：是否一次通過（Blocked 後重試只有一半；Manager / Director 看團隊一次通過的比例）。
+
+完整定義見 [agent-flow.md §7](docs/agent-flow.md)。
+
+在畫面上：
+
+- **3D**：任務完成時，Agent 頭上先浮出 `✓ Score 94`，接著浮出 `+100 Coins`，他會舉手歡呼。
+- **上方 KPI 列**：Active / Done / Blocked、平均 performance、已發 Coins、忙碌人數，數字即時跳動。
+- **Company Dashboard**（點 KPI 列打開）：
+  - 6 張 KPI 卡：Active / Completed / Blocked Tasks、Average Performance、Total Coins Distributed、Active Agents。
+  - Leaderboard：performance 排名、升降、Coins。
+  - 專案進度與平均分數。
+  - 最近完成的任務與發出的 Coins。
+- **會議室大螢幕**：顯示同一份即時資料，開會時抬頭就看得到。
+- **Agent Panel**：完成數、平均分數、賺到的 Coins、performance 升降；Recent tasks 顯示分數。
+- **Task view**：分數卡，列出每一項各得幾分、Coins 發給誰。
+- **Project Completed** 通知會附上這個專案總共發出的 Coins 與平均分數。
+- 問 Director「What's the status?」，她也會說目前發了多少 Coins、平均幾分。
+
+Demo 專案共發出 **1,700 Coins**（6 × 100 + 3 × 200 + 500）。Kenji 因為 Blocked 一次，分數最低（約 84）。所有分數、Coins、performance 都存在 SQLite，重新整理或重啟 server 都會保留。
+
+| | |
+| --- | --- |
+| ![Score and coins floating over Alex](docs/images/coins-float.jpg) | ![Score card](docs/images/score-card.jpg) |
+
+![Live board in the meeting room](docs/images/meeting-board.jpg)
+
+## Phase 4 內容：走動
+
+![Kickoff meeting](docs/images/kickoff-meeting.jpg)
+
+Agent 的狀態現在對應到實際位置。他們會起身、沿走道走過去，再坐下或站定，不會瞬移：
+
+| Status | 走去哪裡 |
+| --- | --- |
+| Meeting | 會議室的固定座位。Aria 坐大螢幕前的主位，工程團隊與研究團隊分坐兩側 |
+| Reporting | Employee 走到主管桌前排成一排；Manager 走進 Director Office 坐訪客椅；Aria 站在自己辦公桌旁對你報告 |
+| Break | Employees 坐 Lounge 沙發；Managers 到 Coffee Bar 拿咖啡；Aria 站在辦公室窗邊看風景 |
+| Idle / Thinking / Working / Blocked | 自己的座位 |
+
+- **畫面與流程同步**：server 用和前端相同的路徑資料（`packages/shared/src/world.ts`）算出每個人何時走到。
+  - Kickoff meeting 等 Director 與 Managers 全部入座後才開始。
+  - 回報等人走到主管面前才開始。
+- **辦公室有生活感**：完成任務的 Employee 約一半會去休息；沒事做的人也會不時去 Lounge / Coffee Bar，休息 14–24 秒後回座。被指派工作時會立刻走回座位。
+- **走到一半改目的地**：沿原路退回走道再改道，不穿牆、不穿家具（`npm test` 會檢查所有路徑）。
+- 名牌、Follow 鏡頭、點擊 Agent 聚焦都會跟著他走。
+- 打開頁面時，每個人直接出現在目前狀態的位置，例如正在開會的人一開始就坐在會議室。
+
+| | |
+| --- | --- |
+| ![Reporting to the manager](docs/images/reporting.jpg) | ![Manager reports to the Director](docs/images/manager-report.jpg) |
+| ![Break in the lounge](docs/images/break.jpg) | ![Office overview while working](docs/images/walking.jpg) |
+
+## Phase 3 內容：Director 委派
+
+![Director chat](docs/images/director-chat.jpg)
+
+1. **Director Chat**（左下）：你只跟 Aria 對話。她回覆「Understood. I am creating a project and assigning work.」，接著：
+   - 建立 Project。
+   - 召集 Managers 開 kickoff meeting（狀態 Meeting）。
+   - 把 3 個工作流交給 Marcus 與 Sofia。
+   - Chat 中出現**即時更新的 Project card**。
+2. **Managers** 把工作流拆成子任務分給團隊：Marcus → Alex / Priya / Kenji；Sofia → Leo / Mina，QA 任務交給 Omar。
+3. **Employees**：
+   - Thinking（準備）→ Working（執行，螢幕顯示 code / 文件）→ Reporting（回報主管）→ Idle。
+   - Kenji 會遇到一次 **Blocked**（需要 benchmark 主機的 root 權限），5 秒後重試。
+4. **Manager review**：子任務全部完成後，Manager review 並向 Director 回報。
+5. **Director 整合**：工作流全部完成後，Director 整合成最終報告，在 Chat 回覆 Owner，並跳出「**Project Completed**」通知。
+
+![Company working](docs/images/company-working.jpg)
+
+- **所有狀態都來自 server**：
+  - 事件經 SSE 串流到瀏覽器，3D 名牌、螢幕、姿勢、Roster、Panel 用同一個 reducer 更新。
+  - 多個分頁看到的是同一間公司。
+  - 重新整理頁面不會遺失任何東西（SQLite）。
+  - Server 重啟後會接手未完成的任務。
+- **Agent Panel 按鈕全部可用**：
+  - **Chat**：開啟和該 Agent 的對話，他會回報手上或剛完成的任務。
+  - **Assign Task**：直接指派（標題、細節、優先度）；完成後該 Agent 會在對話中回報。指派給 Director 等於開新專案。
+  - **Reward +100**：寫入資料庫。
+  - **View Task**：查看任務。
+- **Task view**：狀態、優先度、Reward、Assignee、上層任務與專案、子任務清單、結果全文。可從 Project card、Agent Panel、Recent tasks 點進去。
+- 問 Director「What's the status?」會得到依實際任務計算的進度（含 Blocked 項目）。
+
+| | |
+| --- | --- |
+| ![Task view](docs/images/task-view.jpg) | ![Final report](docs/images/final-report.jpg) |
+
+### API
+
+| Method | Path | 說明 |
+| --- | --- | --- |
+| `GET` | `/api/state` | 公司快照 + `seq` |
+| `GET` | `/api/events?after=seq` | SSE 事件串流（自動重連、補送） |
+| `POST` | `/api/agents/:id/messages` | Owner 對 Agent 說話 `{ text }` |
+| `POST` | `/api/agents/:id/tasks` | 指派任務 `{ title, description?, priority? }` |
+| `POST` | `/api/agents/:id/reward` | Reward `{ coins }` |
+| `POST` | `/api/admin/reset` | 重設公司 |
+
+## Phase 2 內容
+
+![Agent panel](docs/images/agent-panel.jpg)
+
+- **Agent Panel**（點擊任一 Agent）：Name、Role、Department / Level、Manager（可點擊跳過去）、Skills、Status、Current Task、Performance（進度條）、Coins（數字動畫）、Team（Manager 才有）。
+- **按鈕**：Reward +100 會讓 Coins 增加，3D 中浮出「+100 Coins」，Agent 舉手歡呼。Chat、Assign Task、View Task 在 Phase 3 開放。
+- **Status UI**：Roster、Panel、3D 名牌共用同一套狀態色與動畫，3D 角色也會跟著狀態改變：
+
+  | Status | 3D |
+  | --- | --- |
+  | Idle | 坐著放鬆、偶爾張望，螢幕待機桌布 |
+  | Thinking | 手托下巴，螢幕切成文件 |
+  | Working | 打字動畫，工程師螢幕顯示 code、研究員顯示文件 |
+  | Blocked | 抱頭、地上紅色警示光圈閃爍、名牌變紅、螢幕顯示 BLOCKED |
+  | Meeting / Reporting / Break | 走到會議室 / 主管桌前 / 休息區（Phase 4） |
+
+- **Status preview**（開發用）：Panel 底部可手動切換狀態，送出和 Task Engine 相同的 `AGENT_STATUS_CHANGED` 事件，用來檢查每種狀態的樣子。
+
+| | |
+| --- | --- |
+| ![Blocked status](docs/images/status-blocked.jpg) | ![Mochi on the sofa](docs/images/cat-sofa.jpg) |
+
+## 辦公室貓 Mochi 🐈
+
+![Following Mochi](docs/images/cat-follow.jpg)
+
+橘色虎斑貓，不在組織圖上，職稱是 Chief Morale Officer（薪水用零食支付）。
+
+- 沿著走道導航圖自己走動，會去的地方：西側窗邊曬太陽、Lounge 沙發午睡（會跳上沙發）、北側窗邊看城市、Coffee Bar 討零食、接待區地毯，以及拜訪每位 Agent 的座位（會坐在旁邊看著他）。
+- 點擊 Mochi 打開資訊卡，顯示目前在做什麼、在哪裡。
+  - **Pet**：Mochi 會發出呼嚕聲、尾巴快速擺動。
+  - **Follow**：鏡頭跟著 Mochi 走，期間仍可以旋轉與縮放；按 WASD、`Esc` 或選擇任一視角就會停止跟隨。
+- 這套導航圖在 Phase 4 移到 `packages/shared/src/world.ts`，Agent 走動與 server 計時都用它。
 
 ## Phase 1 內容
 
@@ -97,27 +303,28 @@ Owner (You)
 ├─ apps/
 │  ├─ web/                    ✅ React + Vite + React Three Fiber
 │  │  └─ src/
-│  │     ├─ world/            辦公室場景：layout、building、rooms、lighting、exterior
-│  │     ├─ agents/           Avatar、名牌投影、狀態色、外觀
+│  │     ├─ world/            辦公室場景：layout、building、rooms、lighting、exterior、cat/
+│  │     ├─ agents/           Avatar（狀態姿勢、走路）、AgentMotion、名牌與浮動特效投影、狀態色、外觀
 │  │     ├─ assets/           AssetProvider、procedural 家具、材質、canvas textures
 │  │     ├─ camera/           開場飛入、預設視角、Orbit + WASD
-│  │     ├─ store/            Zustand store
-│  │     └─ ui/               HUD（Roster、View bar、Stats）
-│  └─ server/                 🔜 Phase 3：Fastify API + Event stream
+│  │     ├─ store/            Zustand store（快照 + SSE，套用共用 reducer）
+│  │     ├─ net/              API client、事件串流
+│  │     └─ ui/               HUD（Roster、Director Chat、KPI 列、Company Dashboard、Agent / Task / Cat Panel、Toasts、Stats）
+│  └─ server/                 ✅ Fastify API、SSE、事件管線、SQLite 持久化、重啟恢復
 ├─ packages/
-│  ├─ shared/                 ✅ Agent / Task 型別、組織 seed、座位
-│  ├─ agent-runtime/          🔜 Phase 3：Director / Manager / Employee 行為
-│  ├─ task-engine/            🔜 Phase 3：任務狀態機、拆解、roll-up
-│  └─ llm-provider/           🔜 Phase 3：Mock / Claude / OpenAI
+│  ├─ shared/                 ✅ 型別、OfficeEvent、reduceEvent、組織 seed、座位、世界模型（導航圖、目的地、走路時間）、計分
+│  ├─ agent-runtime/          ✅ Director / Manager / Employee 行為（含 Demo 流程測試）
+│  ├─ task-engine/            ✅ 任務狀態機、建立專案 / 任務、roll-up
+│  └─ llm-provider/           ✅ LLMProvider 介面 + Mock provider + Claude provider（OpenAI 待加入）
 ├─ assets/                    之後放 GLTF / texture（目前全部 procedural）
-├─ prisma/                    🔜 Phase 3：SQLite schema
+├─ prisma/                    ✅ SQLite schema（Prisma 7）
 └─ docs/
    ├─ architecture.md
    ├─ agent-flow.md
    └─ mvp.md
 ```
 
-只有實際用到的資料夾才是 npm workspace（目前 `apps/web`、`packages/shared`）。其他資料夾只有 README，說明之後要放什麼，避免太早建立沒用到的抽象。
+6 個 npm workspace，各 package 直接 export TypeScript source，不需要 build step。依賴方向：`shared` ← `llm-provider`、`task-engine` ← `agent-runtime` ← `server`；web 只依賴 `shared`。
 
 ## Tech stack
 
@@ -126,9 +333,9 @@ Owner (You)
 | Frontend | React 19, TypeScript, Vite |
 | 3D | three.js, React Three Fiber, @react-three/drei |
 | State | Zustand |
-| Backend（Phase 3） | Node.js, TypeScript, Fastify |
-| Database（Phase 3） | SQLite + Prisma |
-| AI（Phase 3） | Provider abstraction：Mock（預設）、Claude、OpenAI |
+| Backend | Node.js 22, TypeScript（tsx）, Fastify 5, Server-Sent Events |
+| Database | SQLite + Prisma 7（better-sqlite3 driver adapter） |
+| AI | Provider abstraction：Mock（預設）、Claude（`@anthropic-ai/sdk`，structured outputs）；OpenAI 待實作 |
 
 ## 效能
 
@@ -146,5 +353,5 @@ Owner (You)
 ## Docs
 
 - [Architecture](docs/architecture.md)：Frontend、Backend、Agent Runtime、Task Engine、Event Bus、Database、3D World、LLM Provider（含 Mermaid 圖）
-- [Agent Flow](docs/agent-flow.md)：組織圖、任務拆解、時序圖、狀態機、Status → 3D 對照、計分公式
+- [Agent Flow](docs/agent-flow.md)：組織圖、任務拆解、時序圖、狀態機、Status → 3D 對照、計分公式與 Demo 分數
 - [MVP Plan](docs/mvp.md)：驗證目標、各 Phase checklist、Demo flow、不做的項目

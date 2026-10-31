@@ -1,31 +1,55 @@
 import { directReports, OWNER, type Agent } from '@office/shared'
 import { useEffect, useState } from 'react'
-import { DEPT_COLOR, STATUS_META } from '../agents/status'
+import { DEPT_COLOR } from '../agents/status'
 import { AgentTags } from '../agents/tags'
 import { useOfficeStore } from '../store/officeStore'
 import { CAMERA_PRESETS } from '../world/layout'
+import { ChatPanel } from './ChatPanel'
+import { Dashboard, Pulse } from './Dashboard'
+import { SidePanel } from './SidePanel'
+import { StatusBadge } from './StatusBadge'
+import { CameraIcon } from './icons'
+import { Toasts } from './Toasts'
 
 export function Hud() {
   const introDone = useOfficeStore((s) => s.introDone)
   const toggleStats = useOfficeStore((s) => s.toggleStats)
+  const select = useOfficeStore((s) => s.select)
+  const follow = useOfficeStore((s) => s.follow)
+  const connect = useOfficeStore((s) => s.connect)
+  const setDashboardOpen = useOfficeStore((s) => s.setDashboardOpen)
+
+  useEffect(() => connect(), [connect])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.('input, textarea')) return
       if (e.key === '`' || e.key.toLowerCase() === 'p') toggleStats()
+      if (e.key === 'Escape') {
+        // Close the topmost thing first: the dashboard, then the panel / follow cam.
+        if (useOfficeStore.getState().dashboardOpen) return setDashboardOpen(false)
+        select(null)
+        follow(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggleStats])
+  }, [toggleStats, select, follow, setDashboardOpen])
 
   return (
     <div className={`hud ${introDone ? 'hud--ready' : ''}`}>
       <AgentTags />
-      <Brand />
-      <Roster />
+      <div className="left-col">
+        <Brand />
+        <Roster />
+        <ChatPanel />
+      </div>
+      <Pulse />
       <ViewBar />
+      <SidePanel />
+      <Dashboard />
+      <Toasts />
       <Help />
-      <Stats />
       {!introDone && <div className="intro-hint">Entering Claude Office · click or drag to skip</div>}
     </div>
   )
@@ -39,7 +63,7 @@ function Brand() {
         <div className="brand__title">Claude Office</div>
         <div className="brand__subtitle">AI Agent Company Simulator</div>
       </div>
-      <span className="chip">MVP · Phase 1</span>
+      <span className="chip">MVP · Phase 6</span>
     </header>
   )
 }
@@ -49,7 +73,7 @@ function Roster() {
   const director = agents.find((a) => !a.managerId)
   const managers = director ? directReports(agents, director.id) : []
   const coins = agents.reduce((sum, a) => sum + a.coins, 0)
-  const idle = agents.filter((a) => a.status === 'idle').length
+  const busy = agents.filter((a) => a.status !== 'idle').length
   const [open, setOpen] = useState(true)
 
   return (
@@ -59,7 +83,7 @@ function Roster() {
           Organization <span className="roster__caret">{open ? '▾' : '▸'}</span>
         </span>
         <span className="roster__meta">
-          {agents.length} agents · {idle} idle · {coins.toLocaleString()} coins
+          {agents.length} agents · {busy} busy · {coins.toLocaleString()} coins
         </span>
       </button>
       <div className="roster__owner">
@@ -81,11 +105,10 @@ function Roster() {
 }
 
 function RosterRow({ agent, depth }: { agent: Agent; depth: number }) {
-  const hovered = useOfficeStore((s) => s.hoveredAgentId === agent.id)
-  const active = useOfficeStore((s) => s.activeView === `agent:${agent.id}`)
+  const hovered = useOfficeStore((s) => s.hoveredId === agent.id)
+  const active = useOfficeStore((s) => s.selectedId === agent.id)
   const setHovered = useOfficeStore((s) => s.setHovered)
   const focusAgent = useOfficeStore((s) => s.focusAgent)
-  const status = STATUS_META[agent.status]
   return (
     <button
       className={`roster__row ${hovered ? 'is-hovered' : ''} ${active ? 'is-active' : ''}`}
@@ -97,10 +120,7 @@ function RosterRow({ agent, depth }: { agent: Agent; depth: number }) {
       <span className="avatar-dot" style={{ background: DEPT_COLOR[agent.department] }} />
       <span className="roster__name">{agent.name}</span>
       <span className="roster__role">{agent.role}</span>
-      <span className="status-pill" style={{ '--status': status.color } as React.CSSProperties}>
-        <i />
-        {status.label}
-      </span>
+      <StatusBadge status={agent.status} />
     </button>
   )
 }
@@ -108,34 +128,79 @@ function RosterRow({ agent, depth }: { agent: Agent; depth: number }) {
 function ViewBar() {
   const active = useOfficeStore((s) => s.activeView)
   const goToPreset = useOfficeStore((s) => s.goToPreset)
+  const autoCam = useOfficeStore((s) => s.autoCam)
+  const setAutoCam = useOfficeStore((s) => s.setAutoCam)
   return (
-    <nav className="panel viewbar">
-      {CAMERA_PRESETS.map((p) => (
-        <button key={p.id} className={active === p.id ? 'is-active' : ''} onClick={() => goToPreset(p.id)}>
-          {p.label}
+    <div className="viewbar-wrap">
+      <nav className="panel viewbar">
+        <button
+          className={`viewbar__auto ${autoCam ? 'is-on' : ''}`}
+          onClick={() => setAutoCam(!autoCam)}
+          aria-pressed={autoCam}
+          title="Auto camera: cuts to meetings, reports and results. Moving the camera yourself turns it off."
+        >
+          <CameraIcon size={13} /> Auto
         </button>
-      ))}
-    </nav>
+        {CAMERA_PRESETS.map((p) => (
+          <button key={p.id} className={active === p.id ? 'is-active' : ''} onClick={() => goToPreset(p.id)}>
+            {p.label}
+          </button>
+        ))}
+      </nav>
+    </div>
   )
 }
 
 function Help() {
   const toggleStats = useOfficeStore((s) => s.toggleStats)
+  const resetCompany = useOfficeStore((s) => s.resetCompany)
+  const provider = useOfficeStore((s) => s.provider)
+  const graphics = useOfficeStore((s) => s.graphics)
+  const setGraphics = useOfficeStore((s) => s.setGraphics)
+  const [open, setOpen] = useState(false)
   return (
-    <aside className="panel help">
-      <div>
-        <kbd>Drag</kbd> orbit · <kbd>Right-drag</kbd> pan · <kbd>Scroll</kbd> zoom
-      </div>
-      <div>
-        <kbd>W</kbd>
-        <kbd>A</kbd>
-        <kbd>S</kbd>
-        <kbd>D</kbd> move · <kbd>Q</kbd>/<kbd>E</kbd> down/up · click an agent to focus
-      </div>
-      <button className="link" onClick={toggleStats}>
-        Performance stats (P)
+    <div className="help-wrap">
+      <Stats />
+      {open && (
+        <aside className="panel help">
+          <div>
+            <kbd>Drag</kbd> orbit · <kbd>Right-drag</kbd> pan · <kbd>Scroll</kbd> zoom
+          </div>
+          <div>
+            <kbd>W</kbd>
+            <kbd>A</kbd>
+            <kbd>S</kbd>
+            <kbd>D</kbd> move · <kbd>Q</kbd>/<kbd>E</kbd> down/up
+          </div>
+          <div>Click an agent or the cat for details · <kbd>Esc</kbd> close / stop following</div>
+          <div className="help__row">
+            <button className="link" onClick={toggleStats}>
+              Performance stats (P)
+            </button>
+            <button
+              className="link link--danger"
+              onClick={() => {
+                if (confirm('Reset the company? All projects, tasks and chat history will be deleted.')) void resetCompany()
+              }}
+            >
+              Reset company
+            </button>
+          </div>
+          <div className="help__row help__graphics">
+            Graphics
+            {(['high', 'standard'] as const).map((g) => (
+              <button key={g} className={`chip-btn ${graphics === g ? 'is-active' : ''}`} onClick={() => setGraphics(g)}>
+                {g === 'high' ? 'High · AO + bloom' : 'Standard'}
+              </button>
+            ))}
+          </div>
+          <div className="help__meta">LLM provider: {provider}</div>
+        </aside>
+      )}
+      <button className="panel help-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {open ? '×' : '?'}
       </button>
-    </aside>
+    </div>
   )
 }
 

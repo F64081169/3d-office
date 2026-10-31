@@ -1,0 +1,84 @@
+// SQLite schema for the company. Entity tables hold the latest state; Event is the
+// append-only log the server streams to clients (and could replay).
+// Client is generated into apps/server/src/generated/prisma (see apps/server/prisma.config.ts).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../apps/server/src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Agent {
+  id            String  @id
+  name          String
+  role          String
+  department    String
+  level         Int
+  managerId     String?
+  /// JSON array of strings
+  skills        String
+  status        String
+  currentTaskId String?
+  performance   Int
+  coins         Int
+  posX          Float
+  posY          Float
+  posZ          Float
+}
+
+model Project {
+  id          String    @id
+  title       String
+  prompt      String
+  status      String
+  rootTaskId  String
+  summary     String?
+  createdAt   DateTime
+  completedAt DateTime?
+}
+
+model Task {
+  id            String    @id
+  projectId     String?
+  parentTaskId  String?
+  title         String
+  description   String
+  createdBy     String
+  assignedTo    String
+  status        String
+  blockedReason String?
+  priority      String
+  reward        Int
+  result        String?
+  /// JSON TaskScore, set on completion
+  score         String?
+  /// coins paid out for this task
+  paid          Int?
+  createdAt     DateTime
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  @@index([projectId])
+  @@index([assignedTo])
+}
+
+model ChatMessage {
+  id        String   @id
+  thread    String
+  from      String
+  text      String
+  projectId String?
+  createdAt DateTime
+
+  @@index([thread, createdAt])
+}
+
+model Event {
+  seq     Int      @id
+  type    String
+  payload String
+  at      DateTime
+}

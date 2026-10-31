@@ -21,7 +21,7 @@ export function canvasTexture(w: number, h: number, draw: Draw, { srgb = true, r
   return tex
 }
 
-const FONT = '-apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif'
+export const FONT = '-apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif'
 
 function wobblyLine(ctx: CanvasRenderingContext2D, x0: number, x1: number, y: number, amp: number, freq: number, phase: number) {
   ctx.beginPath()
@@ -244,7 +244,7 @@ export const facadeTexture = lazy(() =>
   }),
 )
 
-export type ScreenKind = 'idle' | 'code' | 'dashboard' | 'docs'
+export type ScreenKind = 'idle' | 'code' | 'dashboard' | 'docs' | 'error'
 
 function drawScreen(kind: ScreenKind, ctx: CanvasRenderingContext2D, w: number, h: number) {
   const rnd = mulberry32(kind.length * 97)
@@ -269,6 +269,23 @@ function drawScreen(kind: ScreenKind, ctx: CanvasRenderingContext2D, w: number, 
     ctx.fillText('Claude Office · standing by', 38, 134)
     ctx.fillStyle = 'rgba(255,255,255,0.25)'
     ctx.fillRect(w / 2 - 110, h - 34, 220, 22)
+    return
+  }
+  if (kind === 'error') {
+    ctx.fillStyle = '#2a1416'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#e05a4f'
+    ctx.fillRect(0, 0, w, 34)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `600 20px ${FONT}`
+    ctx.fillText('BLOCKED — needs input', 18, 24)
+    ctx.fillStyle = 'rgba(224,90,79,0.9)'
+    ctx.beginPath()
+    ctx.arc(w / 2, h / 2 + 18, 46, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `700 64px ${FONT}`
+    ctx.fillText('!', w / 2 - 9, h / 2 + 41)
     return
   }
   if (kind === 'code') {
@@ -328,55 +345,6 @@ export function screenTexture(kind: ScreenKind) {
   }
   return screenCache.get(kind)!
 }
-
-/** Big wall display in the meeting room. */
-export const meetingScreenTexture = lazy(() =>
-  canvasTexture(
-    1024,
-    576,
-    (ctx, w, h) => {
-      const rnd = mulberry32(61)
-      ctx.fillStyle = '#121a24'
-      ctx.fillRect(0, 0, w, h)
-      ctx.fillStyle = '#f4efe8'
-      ctx.font = `600 38px ${FONT}`
-      ctx.fillText('Company Overview', 48, 72)
-      ctx.fillStyle = '#8fa3b8'
-      ctx.font = `400 22px ${FONT}`
-      ctx.fillText('Claude Office · 9 agents · 2 teams', 48, 106)
-      const kpis = [
-        ['Agents online', '9', '#5fbf8f'],
-        ['Active tasks', '0', '#3b9fd8'],
-        ['Coins issued', '4,800', '#e0b04c'],
-      ]
-      kpis.forEach(([label, value, color], i) => {
-        const x = 48 + i * 318
-        ctx.fillStyle = '#1b2633'
-        ctx.fillRect(x, 140, 290, 130)
-        ctx.fillStyle = color
-        ctx.fillRect(x, 140, 6, 130)
-        ctx.fillStyle = '#8fa3b8'
-        ctx.font = `400 22px ${FONT}`
-        ctx.fillText(label, x + 26, 182)
-        ctx.fillStyle = '#f4efe8'
-        ctx.font = `600 52px ${FONT}`
-        ctx.fillText(value, x + 26, 245)
-      })
-      ctx.fillStyle = '#1b2633'
-      ctx.fillRect(48, 300, w - 96, 230)
-      ctx.strokeStyle = '#e08a3c'
-      ctx.lineWidth = 5
-      ctx.beginPath()
-      for (let x = 0; x <= w - 140; x += 24) ctx.lineTo(70 + x, 500 - x * 0.18 - Math.sin(x / 50) * 20 - rnd() * 14)
-      ctx.stroke()
-      ctx.strokeStyle = '#3b9fd8'
-      ctx.beginPath()
-      for (let x = 0; x <= w - 140; x += 24) ctx.lineTo(70 + x, 480 - x * 0.1 - Math.cos(x / 70) * 25)
-      ctx.stroke()
-    },
-    { repeat: false },
-  ),
-)
 
 const signCache = new Map<string, THREE.CanvasTexture>()
 /** Wayfinding / brand signage rendered as transparent text textures. */

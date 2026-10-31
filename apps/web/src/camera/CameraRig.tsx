@@ -2,6 +2,7 @@ import { OrbitControls } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, type ComponentRef } from 'react'
 import * as THREE from 'three'
+import { getAnchorPosition } from '../agents/anchors'
 import { useOfficeStore } from '../store/officeStore'
 import { INTRO_START, OVERVIEW } from '../world/layout'
 
@@ -32,6 +33,8 @@ export function CameraRig() {
   const shot = useOfficeStore((s) => s.cameraShot)
   const finishIntro = useOfficeStore((s) => s.finishIntro)
   const clearActiveView = useOfficeStore((s) => s.clearActiveView)
+  const followId = useOfficeStore((s) => s.followId)
+  const follow = useOfficeStore((s) => s.follow)
 
   // Opening shot: swoop from above the city into the office.
   useEffect(() => {
@@ -52,6 +55,8 @@ export function CameraRig() {
 
   useEffect(() => {
     if (!shot || !controls.current) return
+    // A shot requested during the fly-in (e.g. clicking an agent) ends the intro too.
+    if (flight.current?.intro) finishIntro()
     flight.current = {
       fromPos: camera.position.clone(),
       toPos: new THREE.Vector3(...shot.position),
@@ -61,13 +66,32 @@ export function CameraRig() {
       duration: 1.5,
       intro: false,
     }
-  }, [shot, camera, clock])
+  }, [shot, camera, clock, finishIntro])
+
+  // Start following: fly to a close 3/4 shot of the subject; the follow loop then keeps it centred.
+  useEffect(() => {
+    const c = controls.current
+    const p = new THREE.Vector3()
+    if (!followId || !c || !getAnchorPosition(followId, p)) return
+    if (flight.current?.intro) finishIntro()
+    flight.current = {
+      fromPos: camera.position.clone(),
+      toPos: p.clone().add(new THREE.Vector3(2.4, 1.6, 2.8)),
+      fromTarget: c.target.clone(),
+      toTarget: p.clone(),
+      start: clock.elapsedTime,
+      duration: 1.4,
+      intro: false,
+    }
+  }, [followId, camera, clock, finishIntro])
 
   // Any manual orbit/zoom ends (or skips) the current flight.
   useEffect(() => {
     const c = controls.current
     if (!c) return
     const onStart = () => {
+      // The user grabbed the camera: the auto camera hands over.
+      useOfficeStore.getState().setAutoCam(false)
       const f = flight.current
       if (!f) return clearActiveView()
       if (f.intro) {
@@ -82,6 +106,7 @@ export function CameraRig() {
   }, [camera, finishIntro, clearActiveView])
 
   const [fwd, right, move] = useMemo(() => [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], [])
+  const followPos = useMemo(() => new THREE.Vector3(), [])
 
   useFrame((_, dt) => {
     const c = controls.current
@@ -98,6 +123,14 @@ export function CameraRig() {
         if (f.intro) finishIntro()
       }
       return
+    }
+
+    // Follow mode: ease the orbit target onto the subject and carry the camera along.
+    const followed = useOfficeStore.getState().followId
+    if (followed && getAnchorPosition(followed, followPos)) {
+      move.subVectors(followPos, c.target).multiplyScalar(1 - Math.exp(-dt * 4))
+      c.target.add(move)
+      camera.position.add(move)
     }
 
     const k = keys.current
@@ -123,6 +156,8 @@ export function CameraRig() {
     c.target.z = THREE.MathUtils.clamp(c.target.z, -BOUNDS, BOUNDS)
     c.target.y = THREE.MathUtils.clamp(c.target.y, 0, 10)
     camera.position.y = Math.max(camera.position.y, 0.6)
+    if (followed) follow(null)
+    if (useOfficeStore.getState().autoCam) useOfficeStore.getState().setAutoCam(false)
     clearActiveView()
   })
 

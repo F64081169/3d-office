@@ -1,9 +1,11 @@
 import { useAssets } from '../../assets/AssetProvider'
 import { MAT } from '../../assets/materials'
 import { Box, Cylinder, GEO } from '../../assets/primitives'
-import { glowTexture, meetingScreenTexture } from '../../assets/textures'
+import { glowTexture } from '../../assets/textures'
 import { GlassWall } from '../Building'
-import { CEILING_H, MEETING_SEATS, MEETING_TABLE, ZONES } from '../layout'
+import { CEILING_H, MEETING_DOOR, MEETING_SEATS, MEETING_TABLE, ZONES } from '../layout'
+import { CompanyBoardScreen } from './CompanyBoard'
+import { TaskBoard } from './TaskBoard'
 import { HangingSign } from './Workspace'
 import * as THREE from 'three'
 
@@ -15,9 +17,10 @@ export function MeetingRoom() {
   const straight = T.length - T.width
   return (
     <group>
-      <GlassWall axis="x" at={Z.maxZ} from={Z.minX + 0.08} to={Z.maxX} spacing={1.25} gaps={[[-2.8, -1.6]]} />
+      <GlassWall axis="x" at={Z.maxZ} from={Z.minX + 0.08} to={Z.maxX} spacing={1.25} gaps={[MEETING_DOOR]} />
       <GlassWall axis="z" at={Z.maxX} from={Z.minZ} to={Z.maxZ} spacing={1.25} />
       <HangingSign title="MEETING" subtitle="BOARD ROOM" accent="#3b9fd8" position={[-6.5, 2.75, -5.85]} width={1.8} />
+      <TaskBoard />
 
       {/* Racetrack table */}
       <group position={[T.x, 0, T.z]}>
@@ -37,9 +40,7 @@ export function MeetingRoom() {
       {/* Wall display on the shared wall with the Director's office */}
       <group position={[Z.minX + 0.1, 1.55, T.z]} rotation-y={Math.PI / 2}>
         <Box size={[3.3, 1.9, 0.05]} material={MAT.screenBezel} cast={false} />
-        <mesh geometry={GEO.plane} scale={[3.2, 1.8, 1]} position={[0, 0, 0.026]}>
-          <meshBasicMaterial map={meetingScreenTexture()} toneMapped={false} />
-        </mesh>
+        <CompanyBoardScreen scale={[3.2, 1.8, 1]} position={[0, 0, 0.026]} />
         <mesh geometry={GEO.plane} scale={[5, 3.2, 1]} position={[0, 0, -0.03]}>
           <meshBasicMaterial
             map={glowTexture()}

@@ -1,8 +1,15 @@
-# packages/task-engine — 🔜 Phase 3
+# packages/task-engine
 
-Task lifecycle `backlog → assigned → working → review → completed` (plus `blocked`),
-parent/child roll-up via `parentTaskId`, scoring (base 50 + quality/speed/difficulty/review bonuses)
-and coin rewards. Emits `TASK_CREATED`, `TASK_ASSIGNED`, `TASK_STARTED`, `TASK_COMPLETED`, `AGENT_REWARDED`,
-`PROJECT_COMPLETED`.
+Commands → events for the task lifecycle. It validates transitions and never mutates state itself
+(the shared `reduceEvent` does).
 
-Types live in `packages/shared` (`Task`, `TaskStatus`, `TaskPriority`).
+```
+backlog → assigned → working ⇄ blocked
+                     working → review → completed
+                     working → completed
+```
+
+- `createProject` (project + the Director's root task), `createTask` (created + assigned)
+- `start`, `block`, `submitForReview`, `complete`, `completeProject`
+- `isRollupReady(parentId)` (all children done), `openTasksOf(agentId)`
+- Reward is set from priority at creation: low/medium 100 · high 200 · critical 500 (`REWARD_BY_PRIORITY`, in `@office/shared`).

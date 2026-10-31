@@ -1,5 +1,7 @@
 import * as THREE from 'three'
+import { lazy } from '../util/random'
 import {
+  blobShadowTexture,
   floorPlanksTexture,
   marbleTexture,
   oakTexture,
@@ -65,6 +67,8 @@ export const MAT = {
   glowGlass: std({ color: '#fff6ea', emissive: '#ffd49a', emissiveIntensity: 0.75, roughness: 0.35 }),
 
   lightStrip: new THREE.MeshBasicMaterial({ color: '#fff5e6', toneMapped: false }),
+  /** Floor lamp shade, lit from inside. */
+  lampShade: std({ color: '#f3e7d3', emissive: '#ffd8a0', emissiveIntensity: 0.55, roughness: 1, side: THREE.DoubleSide }),
   warmGlow: new THREE.MeshBasicMaterial({ color: '#ffd9a0', toneMapped: false }),
 }
 
@@ -75,4 +79,21 @@ export function floorWoodFor(width: number, depth: number) {
   m.map.repeat.set(width / 3, depth / 3)
   m.map.needsUpdate = true
   return m
+}
+
+/** Soft contact shadow under agents and the cat (one shared material). */
+export const blobMaterial = lazy(
+  () => new THREE.MeshBasicMaterial({ map: blobShadowTexture(), transparent: true, depthWrite: false }),
+)
+
+/**
+ * With post-processing on, light sources go above 1.0 so bloom picks them up (the
+ * composer tone-maps afterwards). Blending also happens in linear space there, where
+ * the same alpha reads much lighter; the blob shadows almost vanished, so darken them.
+ */
+export function setPostProcessing(on: boolean) {
+  MAT.glowGlass.emissiveIntensity = on ? 2.6 : 0.75
+  MAT.lampShade.emissiveIntensity = on ? 1.9 : 0.55
+  MAT.lightStrip.color.set('#fff5e6').multiplyScalar(on ? 2.4 : 1)
+  blobMaterial().opacity = on ? 2.2 : 1
 }

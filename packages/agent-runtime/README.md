@@ -1,10 +1,16 @@
-# packages/agent-runtime — 🔜 Phase 3
+# packages/agent-runtime
 
-Role behaviours as small state machines plus one LLM call each. These are not long-running autonomous loops.
+Runs the company. Each agent has a serial action queue; behaviours are short scripts
+(status change → one `LLMProvider` call → `TaskEngine` command), triggered by events:
 
-- **Director**: parse → create project → split → assign to managers → wait → review → integrate → report to Owner.
-  The Director never executes the work itself.
-- **Manager**: split into subtasks → assign employees → track → collect → review → report to Director.
-- **Employee**: thinking → plan → working → result → reporting → idle.
+- **Director**:
+  - Owner message → `plan` → project + kickoff meeting with the managers → one workstream per manager.
+  - All workstreams done → `summarize` → final report to the Owner → `PROJECT_COMPLETED`.
+  - The Director never executes the work itself.
+- **Manager**: `TASK_ASSIGNED` → `split` into subtasks for the team; all subtasks done → `review` → report.
+- **Employee**: `TASK_ASSIGNED` → `prepare` (thinking) → `execute` (working; on a block: blocked → wait → retry) → reporting → done.
+- `resume()` re-drives unfinished work after a server restart.
+- `COMPANY_RESET` cancels in-flight actions.
 
-See [docs/agent-flow.md](../../docs/agent-flow.md).
+`npm test` (from the repo root) runs the full demo in memory at 40× speed and checks the delegation order,
+statuses, results and chat. See [docs/agent-flow.md](../../docs/agent-flow.md).

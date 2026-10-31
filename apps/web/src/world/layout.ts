@@ -1,4 +1,4 @@
-import type { Seat } from '@office/shared'
+export { MEETING_DOOR, MEETING_SEATS, MEETING_TABLE } from '@office/shared'
 
 /**
  * One-floor penthouse office, metres. +x = east, -z = north (the main window wall).
@@ -30,16 +30,6 @@ export const ZONES = {
   bathroom: { minX: 8, maxX: 20, minZ: 5, maxZ: 13 },
 } satisfies Record<string, Rect>
 
-export const MEETING_TABLE = { x: -5.75, z: -9.5, length: 5.6, width: 1.5 }
-
-/** 5 seats per long side + the head seat at the east end. Used by Phase 4 movement. */
-export const MEETING_SEATS: Seat[] = [
-  ...[-2.2, -1.1, 0, 1.1, 2.2].flatMap((dx) => [
-    { position: { x: MEETING_TABLE.x + dx, y: 0, z: MEETING_TABLE.z - 1.15 }, rotationY: 0 },
-    { position: { x: MEETING_TABLE.x + dx, y: 0, z: MEETING_TABLE.z + 1.15 }, rotationY: Math.PI },
-  ]),
-  { position: { x: MEETING_TABLE.x + 3.35, y: 0, z: MEETING_TABLE.z }, rotationY: -Math.PI / 2 },
-]
 
 export type CameraPreset = {
   id: string
@@ -59,7 +49,7 @@ export const CAMERA_PRESETS: CameraPreset[] = [
   OVERVIEW,
   { id: 'workspace', label: 'Workspace', position: [6.6, 4.4, 7.4], target: [-3.5, 0.6, -0.3] },
   { id: 'director', label: 'Director', position: [-11.4, 2.1, -6.6], target: [-15.5, 0.9, -10.5] },
-  { id: 'meeting', label: 'Meeting Room', position: [-1.7, 2.6, -6.6], target: [-6.5, 0.6, -10] },
+  { id: 'meeting', label: 'Meeting Room', position: [-2.4, 2.9, -12.2], target: [-8.2, 0.7, -8.4] },
   { id: 'lounge', label: 'Lounge', position: [9.5, 2.0, -3.6], target: [5, 0.7, -9.5] },
   { id: 'coffee', label: 'Coffee Bar', position: [12.2, 1.9, -3.2], target: [17, 1.0, -9.5] },
   { id: 'bathroom', label: 'Bathroom', position: [18.9, 1.85, 9.7], target: [12.8, 1.05, 5.9] },

@@ -1,5 +1,7 @@
 /** Shared domain model. The server (Phase 3) and the web client both import these. */
 
+import type { TaskScore } from './scoring'
+
 export type Vec3 = {
   x: number
   y: number
@@ -44,25 +46,66 @@ export type TaskStatus = 'backlog' | 'assigned' | 'working' | 'blocked' | 'revie
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
+/** Coins a task is worth: Normal 100 · Hard 200 · Critical 500, paid to the assignee on completion. */
+export const REWARD_BY_PRIORITY: Record<TaskPriority, number> = { low: 100, medium: 100, high: 200, critical: 500 }
+
 export type Task = {
   id: string
 
   title: string
   description: string
 
+  /** 'owner' or an agent id. */
   createdBy: string
   assignedTo: string
 
   parentTaskId?: string
+  projectId?: string
 
   status: TaskStatus
+  /** Why the task is blocked (only while status === 'blocked'). */
+  blockedReason?: string
 
   priority: TaskPriority
 
   reward: number
 
   result?: string
+  /** Set on completion. */
+  score?: TaskScore
+  /** Coins paid to the assignee for this task. */
+  paid?: number
 
   createdAt: string
+  /** First time work began (TASK_STARTED). */
+  startedAt?: string
   completedAt?: string
+}
+
+export type ProjectStatus = 'in_progress' | 'completed'
+
+/** A high-level request from the Owner, owned by the Director. */
+export type Project = {
+  id: string
+  title: string
+  /** The Owner's original words. */
+  prompt: string
+  status: ProjectStatus
+  /** The Director's root task; workstreams are its children. */
+  rootTaskId: string
+  summary?: string
+  createdAt: string
+  completedAt?: string
+}
+
+/** One message in a conversation between the Owner and an agent. */
+export type ChatMessage = {
+  id: string
+  /** The agent the Owner is talking to (one thread per agent). */
+  thread: string
+  /** 'owner' or the agent id. */
+  from: string
+  text: string
+  projectId?: string
+  createdAt: string
 }

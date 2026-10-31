@@ -1,17 +1,20 @@
 import type { Agent } from '@office/shared'
-import { useFrame, useThree } from '@react-three/fiber'
-import { useMemo } from 'react'
+import { addAfterEffect, useThree } from '@react-three/fiber'
+import { useEffect } from 'react'
 import * as THREE from 'three'
-import { useOfficeStore } from '../store/officeStore'
+import { CAT_ID, useOfficeStore, type FloatEffect } from '../store/officeStore'
+import { CAT_ACTIVITY, CAT_COLOR, CAT_NAME } from '../world/cat/catInfo'
+import { CoinIcon, PawIcon } from '../ui/icons'
+import { getAnchor } from './anchors'
 import { DEPT_COLOR, STATUS_META } from './status'
 
 /**
- * Agent name tags live in one plain DOM layer (rendered by the HUD), not in nine
- * separate drei <Html> roots. Avatars register a 3D anchor, the HUD registers a
- * DOM element, and <TagProjector> moves each element to its anchor every frame.
+ * Name tags and floating effects live in one plain DOM layer (rendered by the HUD),
+ * not in separate drei <Html> roots. 3D objects register an anchor (anchors.ts), the
+ * HUD registers DOM elements, and <TagProjector> moves each element to its anchor every frame.
  */
-const anchors = new Map<string, THREE.Object3D>()
-const elements = new Map<string, HTMLDivElement>()
+const tagElements = new Map<string, HTMLDivElement>()
+const effectElements = new Map<HTMLDivElement, string>()
 /** Opaque walls that hide tags behind them (glass does not). */
 const occluders: THREE.Object3D[] = []
 
@@ -22,66 +25,93 @@ export const registerOccluder = (obj: THREE.Object3D) => {
   }
 }
 
-export const registerTagAnchor = (id: string, obj: THREE.Object3D | null) => {
-  if (obj) anchors.set(id, obj)
-  else anchors.delete(id)
-}
-
-const registerTagElement = (id: string, el: HTMLDivElement | null) => {
-  if (el) elements.set(id, el)
-  else elements.delete(id)
+const registerTag = (id: string) => (el: HTMLDivElement | null) => {
+  if (el) tagElements.set(id, el)
+  else tagElements.delete(id)
 }
 
 /** Distance thresholds for the label level-of-detail. */
 const LOD = { near: 16, far: 75 }
 
+/**
+ * Projects after each frame has rendered, so tags use exactly the camera and avatar
+ * positions on screen (a plain useFrame would run before the camera rig and lag a frame).
+ */
 export function TagProjector() {
-  const size = useThree((s) => s.size)
-  const v = useMemo(() => new THREE.Vector3(), [])
-  const dir = useMemo(() => new THREE.Vector3(), [])
-  const ray = useMemo(() => new THREE.Raycaster(), [])
-  useFrame(({ camera }) => {
-    const hovered = useOfficeStore.getState().hoveredAgentId
-    for (const [id, el] of elements) {
-      const anchor = anchors.get(id)
-      if (!anchor) continue
-      anchor.getWorldPosition(v)
-      const dist = camera.position.distanceTo(v)
-      ray.set(camera.position, dir.subVectors(v, camera.position).normalize())
-      ray.far = dist
-      const occluded = ray.intersectObjects(occluders, false).length > 0
-      v.project(camera)
-      const visible = !occluded && v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2
-      const lod = !visible ? 'hidden' : id === hovered || dist < LOD.near ? 'near' : dist < LOD.far ? 'far' : 'hidden'
-      if (el.dataset.lod !== lod) el.dataset.lod = lod
-      if (lod === 'hidden') continue
-      const x = ((v.x + 1) / 2) * size.width
-      const y = ((1 - v.y) / 2) * size.height
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`
-      el.style.zIndex = String(id === hovered ? 1000 : 900 - Math.round(dist))
-    }
-  })
+  const get = useThree((s) => s.get)
+
+  useEffect(() => {
+    const v = new THREE.Vector3()
+    const dir = new THREE.Vector3()
+    const ray = new THREE.Raycaster()
+
+    return addAfterEffect(() => {
+      const { camera, size } = get()
+      const { hoveredId, selectedId } = useOfficeStore.getState()
+
+      /** Projects an anchor; returns distance, or -1 when off-screen / behind a wall. */
+      const project = (id: string) => {
+        const anchor = getAnchor(id)
+        if (!anchor) return -1
+        anchor.getWorldPosition(v)
+        const dist = camera.position.distanceTo(v)
+        ray.set(camera.position, dir.subVectors(v, camera.position).normalize())
+        ray.far = dist
+        if (ray.intersectObjects(occluders, false).length) return -1
+        v.project(camera)
+        if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) return -1
+        return dist
+      }
+      const place = (el: HTMLElement, z: number) => {
+        const x = ((v.x + 1) / 2) * size.width
+        const y = ((1 - v.y) / 2) * size.height
+        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`
+        el.style.zIndex = String(z)
+      }
+
+      for (const [id, el] of tagElements) {
+        const dist = project(id)
+        const focus = id === hoveredId || id === selectedId
+        const lod = dist < 0 ? 'hidden' : focus || dist < LOD.near ? 'near' : dist < LOD.far ? 'far' : 'hidden'
+        if (el.dataset.lod !== lod) el.dataset.lod = lod
+        if (lod !== 'hidden') place(el, focus ? 1000 : 900 - Math.round(dist))
+      }
+      for (const [el, anchorId] of effectElements) {
+        const dist = project(anchorId)
+        el.style.display = dist < 0 ? 'none' : ''
+        if (dist >= 0) place(el, 1100)
+      }
+    })
+  }, [get])
   return null
 }
 
 export function AgentTags() {
   const agents = useOfficeStore((s) => s.agents)
+  const effects = useOfficeStore((s) => s.effects)
   return (
     <div className="tag-layer">
       {agents.map((a) => (
         <AgentTag key={a.id} agent={a} />
+      ))}
+      <CatTag />
+      {effects.map((e) => (
+        <FloatingEffect key={e.id} effect={e} />
       ))}
     </div>
   )
 }
 
 function AgentTag({ agent }: { agent: Agent }) {
+  const selected = useOfficeStore((s) => s.selectedId === agent.id)
   const status = STATUS_META[agent.status]
   return (
     <div
-      ref={(el) => registerTagElement(agent.id, el)}
+      ref={registerTag(agent.id)}
       className="agent-tag"
       data-lod="hidden"
+      data-status={agent.status}
+      data-selected={selected || undefined}
       style={{ '--dept': DEPT_COLOR[agent.department], '--status': status.color } as React.CSSProperties}
     >
       <div className="agent-tag__name">{agent.name}</div>
@@ -90,6 +120,53 @@ function AgentTag({ agent }: { agent: Agent }) {
         <i />
         {status.label}
       </div>
+    </div>
+  )
+}
+
+function CatTag() {
+  const cat = useOfficeStore((s) => s.cat)
+  const selected = useOfficeStore((s) => s.selectedId === CAT_ID)
+  const activity = CAT_ACTIVITY[cat.activity]
+  return (
+    <div
+      ref={registerTag(CAT_ID)}
+      className="agent-tag agent-tag--cat"
+      data-lod="hidden"
+      data-selected={selected || undefined}
+      style={{ '--dept': CAT_COLOR, '--status': activity.color } as React.CSSProperties}
+    >
+      <div className="agent-tag__name">
+        <PawIcon /> {CAT_NAME}
+      </div>
+      <div className="agent-tag__role">Office Cat</div>
+      <div className="agent-tag__status">
+        <i />
+        {activity.label}
+      </div>
+    </div>
+  )
+}
+
+function FloatingEffect({ effect }: { effect: FloatEffect }) {
+  return (
+    <div
+      ref={(el) => {
+        if (!el) return
+        effectElements.set(el, effect.anchorId)
+        return () => {
+          effectElements.delete(el)
+        }
+      }}
+      className="float-effect"
+      data-kind={effect.kind}
+      style={{ display: 'none', '--slot': effect.slot } as React.CSSProperties}
+    >
+      <span>
+        {effect.kind === 'coins' && <CoinIcon />}
+        {effect.kind === 'done' && '✓ '}
+        {effect.text}
+      </span>
     </div>
   )
 }
